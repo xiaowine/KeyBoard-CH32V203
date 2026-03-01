@@ -1,10 +1,15 @@
 #include "app.h"
 #include "key.h"
+#include <string.h>
+
+static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
+static u16 scan_tick_counter = 0;
+static u8 last_snapshot[HC165_COUNT];
 
 void app_init(void)
 {
 
-    // Io Init
+    // IO 初始化
     {
         RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
@@ -30,7 +35,7 @@ void app_init(void)
     }
 
 #pragma region
-// Encode Init (TIM)
+// 编码器初始化（TIM）
 // {
 //     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
@@ -63,49 +68,10 @@ void app_init(void)
 // }
 #pragma endregion
 
-    // Key Init (SPI)
-    {
-        RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
+    /* 键盘模块初始化：配置 SPI + DMA 以读取 74HC165 */
+    key_init();
 
-        SPI_InitTypeDef SPI_InitStructure = {0};
-        SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
-        SPI_InitStructure.SPI_Mode = SPI_Mode_Master;
-        SPI_InitStructure.SPI_DataSize = SPI_DataSize_8b;
-        SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;
-        SPI_InitStructure.SPI_CPHA = SPI_CPHA_1Edge;
-        SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;
-        SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;
-        SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
-        SPI_InitStructure.SPI_CRCPolynomial = 0;
-        SPI_Init(SPI1, &SPI_InitStructure);
-
-        // SPI DMA
-        // DMA_InitTypeDef DMA_InitStructure = {0};
-
-        // RCC_AHBPeriphClockCmd (RCC_AHBPeriph_DMA1, ENABLE);
-
-        // DMA_InitStructure.DMA_PeripheralBaseAddr = (u32)&SPI1->DATAR;
-        // DMA_InitStructure.DMA_MemoryBaseAddr = (u32)RxData;
-        // DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
-        // DMA_InitStructure.DMA_BufferSize = Size;
-        // DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
-        // DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
-        // DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
-        // DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
-        // DMA_InitStructure.DMA_Mode = DMA_Mode_Circular;
-        // DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
-        // DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
-        // DMA_Init (DMA1_Channel2, &DMA_InitStructure);
-
-        // DMA_Cmd (DMA1_Channel2, DISABLE);
-        // DMA_SetCurrDataCounter (DMA1_Channel2, Size);
-        // DMA_Cmd (DMA1_Channel2, ENABLE);
-
-        // SPI_I2S_DMACmd (SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
-        SPI_Cmd(SPI1, ENABLE);
-    }
-
-    // TIM Init
+    // TIM 初始化
     {
         RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
 
@@ -146,17 +112,50 @@ void app_init(void)
     }
 }
 
-void app_run(void)
+RAM_FUNC void app_run(void)
 {
-    u8 *RxData = gekey();
-    output_data(RxData);
-    Delay_Ms(1000);
+    switch (key_state)
+    {
+    case KEY_STATE_IDLE:
+        /* 空闲状态，无操作 */
+        break;
+
+    case KEY_STATE_SCANNING:
+        /* 检查 DMA 传输是否完成 */
+        if (key_transfer_complete())
+        {
+            /* 将模块快照复制到应用层的 last_snapshot */
+            key_copy_snapshot(last_snapshot);
+            key_state = KEY_STATE_DATA_READY;
+        }
+        break;
+
+    case KEY_STATE_DATA_READY:
+        /* 数据处理完毕，回到空闲状态 */
+        key_state = KEY_STATE_IDLE;
+        break;
+    }
+
+    /* 定期输出数据（每秒一次）*/
+    if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
+    {
+        scan_tick_counter = 0;
+        output_data((const u8 *)last_snapshot);
+    }
 }
 
-__attribute__((interrupt("WCH-Interrupt-fast"))) void TIM3_IRQHandler(void)
+INTF void TIM3_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM3, TIM_IT_Update) == SET)
     {
+        scan_tick_counter++;
+
+        /* 如果当前空闲，启动新的扫描 */
+        if (key_state == KEY_STATE_IDLE)
+        {
+            key_state = KEY_STATE_SCANNING;
+            key_start_scan();
+        }
     }
     TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
 }

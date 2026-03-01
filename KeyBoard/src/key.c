@@ -1,104 +1,146 @@
 #include "key.h"
 #include <string.h>
 
-u8 *gekey(void)
+/* 模块内部缓冲区与标志 */
+static u8 spi_dma_rx_buf[HC165_COUNT];
+static u8 hc165_snapshot[HC165_COUNT];
+static volatile u8 dma_transfer_complete_flag = 0;
+
+/* 向前声明：保留原低级触发名以兼容 */
+void getkey(void);
+
+void key_init(void)
 {
-    static u8 data[HC165_COUNT];
+    /* SPI+DMA 设置，用于通过 SPI1 读取 74HC165 */
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
+
+    SPI_InitTypeDef SPI_InitStructure = {0};
+    SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
+    SPI_InitStructure.SPI_Mode = SPI_Mode_Master;
+    SPI_InitStructure.SPI_DataSize = SPI_DataSize_8b;
+    SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;
+    SPI_InitStructure.SPI_CPHA = SPI_CPHA_1Edge;
+    SPI_InitStructure.SPI_NSS = SPI_NSS_Soft;
+    SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;
+    SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
+    SPI_InitStructure.SPI_CRCPolynomial = 0;
+    SPI_Init(SPI1, &SPI_InitStructure);
+
+    /* SPI DMA 配置 */
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
+
+    DMA_InitTypeDef DMA_InitStructure = {0};
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (u32)&SPI1->DATAR;
+    DMA_InitStructure.DMA_MemoryBaseAddr = (u32)spi_dma_rx_buf;
+    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
+    DMA_InitStructure.DMA_BufferSize = HC165_COUNT;
+    DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
+    DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Enable;
+    DMA_InitStructure.DMA_PeripheralDataSize = DMA_PeripheralDataSize_Byte;
+    DMA_InitStructure.DMA_MemoryDataSize = DMA_MemoryDataSize_Byte;
+    DMA_InitStructure.DMA_Mode = DMA_Mode_Normal;
+    DMA_InitStructure.DMA_Priority = DMA_Priority_VeryHigh;
+    DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
+    DMA_Init(DMA1_Channel2, &DMA_InitStructure);
+
+    static uint8_t dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (u32)&SPI1->DATAR;
+    DMA_InitStructure.DMA_MemoryBaseAddr = (u32)dummy_tx;
+    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
+    DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable; /* 发送固定值 */
+    DMA_Init(DMA1_Channel3, &DMA_InitStructure);
+
+    DMA_Cmd(DMA1_Channel2, DISABLE);
+    DMA_SetCurrDataCounter(DMA1_Channel2, HC165_COUNT);
+    DMA_Cmd(DMA1_Channel2, ENABLE);
+    DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
+
+    DMA_SetCurrDataCounter(DMA1_Channel3, HC165_COUNT);
+    DMA_ClearITPendingBit(DMA1_IT_TC3);
+
+    /* DMA 通道2 的 NVIC 配置 */
+    NVIC_InitTypeDef NVIC_DMA_InitStructure;
+    NVIC_DMA_InitStructure.NVIC_IRQChannel = DMA1_Channel2_IRQn;
+    NVIC_DMA_InitStructure.NVIC_IRQChannelPreemptionPriority = 1;
+    NVIC_DMA_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    NVIC_DMA_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_Init(&NVIC_DMA_InitStructure);
+
+    SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
+    SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Tx, ENABLE);
+    SPI_Cmd(SPI1, ENABLE);
+}
+
+RAM_FUNC u8 key_transfer_complete(void)
+{
+    return dma_transfer_complete_flag;
+}
+
+RAM_FUNC void key_copy_snapshot(u8 dest[HC165_COUNT])
+{
+    memcpy(dest, hc165_snapshot, HC165_COUNT);
+}
+
+RAM_FUNC void key_start_scan(void)
+{
+    DMA_Cmd(DMA1_Channel2, DISABLE); /* RX（接收）*/
+    DMA_Cmd(DMA1_Channel3, DISABLE); /* TX（发送）*/
+
+    /* 启动新传输前清除任何挂起的 TC 标志 */
+    DMA_ClearITPendingBit(DMA1_IT_TC2);
+    dma_transfer_complete_flag = 0;
+
+    DMA_SetCurrDataCounter(DMA1_Channel2, HC165_COUNT);
+    DMA_SetCurrDataCounter(DMA1_Channel3, HC165_COUNT);
+
+    // static u8 data[HC165_COUNT];
     /*
      * 74HC165 时序：
      * - 保持 CE 为高（时钟禁止）同时通过 PL (/CS) 加载并行输入。
      * - 将 PL 脉冲从低变高来锁存输入。
      * - 将 CE 拉低以启用时钟并执行 SPI 时钟读取。
      */
+
     KEY_DISABLE_CLOCK(); /* 禁止时钟 */
     KEY_LOAD_PL();       /* 加载并行输入 */
     KEY_ENABLE_CLOCK();  /* 启用时钟 */
 
-    for (u8 i = 0; i < HC165_COUNT; i++)
-    {
-        // 1. 必须先发送一个字节（空数据），以产生 8 个 SCK 时钟
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_TXE) == RESET)
-            ;
-        SPI_I2S_SendData(SPI1, 0xFF);
-
-        // 2. 等待接收完成（165的数据被“挤”进来了）
-        while (SPI_I2S_GetFlagStatus(SPI1, SPI_I2S_FLAG_RXNE) == RESET)
-            ;
-        data[i] = SPI_I2S_ReceiveData(SPI1);
-    }
-
-    KEY_DISABLE_CLOCK(); /* 禁止时钟 */
-    return data;
+    //  开启 DMA，开始传输
+    DMA_Cmd(DMA1_Channel2, ENABLE);
+    DMA_Cmd(DMA1_Channel3, ENABLE);
 }
 
-#pragma region
-// /*
-//  * 对 keyboard_gekey 多次采样进行简单去抖：
-//  * - attempts: 最多采样次数（例如 3-10）
-//  * - delay_ms: 采样间隔（毫秒，简单忙等待）
-//  * 返回指向内部稳定数据的指针。
-//  * 实现注意：该函数使用内部静态缓冲，返回的指针在下一次调用时会被覆盖。
-//  */
-// u8 *gekey_filtered(u8 attempts, unsigned int delay_ms)
-// {
-//     static u8 stable[HC165_COUNT];
-//     static u8 last[HC165_COUNT];
-//     static u8 cur[HC165_COUNT];
-
-//     if (attempts == 0)
-//         attempts = 1;
-
-//     /* 第一次读取 */
-//     u8 *p = gekey();
-//     memcpy(last, p, HC165_COUNT * sizeof(u8));
-
-//     for (u8 a = 1; a < attempts; ++a)
-//     {
-//         Delay_Ms(delay_ms);
-
-//         p = gekey();
-//         memcpy(cur, p, HC165_COUNT * sizeof(u8));
-
-//         if (memcmp(last, cur, HC165_COUNT * sizeof(u8)) == 0)
-//         {
-//             memcpy(stable, cur, HC165_COUNT * sizeof(u8));
-//             return stable;
-//         }
-
-//         memcpy(last, cur, HC165_COUNT * sizeof(u8));
-//     }
-
-//     /* 未达到完全稳定，返回最后一次采样结果 */
-//     memcpy(stable, last, HC165_COUNT * sizeof(u8));
-//     return stable;
-// }
-#pragma endregion
-
-void output_data(const u8 *data)
+RAM_FUNC void output_data(const u8 rx_buf[HC165_COUNT])
 {
     char buffer[256];
     int offset = 0;
+
     for (u8 i = 0; i < HC165_COUNT; ++i)
     {
-        // header（使用 snprintf 确保不溢出）
-        int n = snprintf(buffer + offset, sizeof(buffer) - offset, "line%u: ", (unsigned)i);
-        if (n < 0 || n >= (int)(sizeof(buffer) - offset))
+        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "line%u: ", (unsigned)i);
+        if (offset >= (int)sizeof(buffer) - 10)
             break;
-        offset += n;
 
-        // 直接写位字符，避免 sprintf/printf 在内循环中
         for (int bit = 7; bit >= 0; --bit)
-        {
-            if (offset >= (int)sizeof(buffer) - 1)
-                break;
-            buffer[offset++] = ((data[i] >> bit) & 1) ? '1' : '0';
-        }
+            buffer[offset++] = ((rx_buf[i] >> bit) & 1) ? '1' : '0';
 
-        if (offset >= (int)sizeof(buffer) - 2)
-            break;
         buffer[offset++] = '\r';
         buffer[offset++] = '\n';
     }
+
     buffer[offset] = '\0';
     PRINT("%s", buffer);
+}
+
+INTF void DMA1_Channel2_IRQHandler(void)
+{
+    if (DMA_GetITStatus(DMA1_IT_TC2))
+    {
+        DMA_ClearITPendingBit(DMA1_IT_TC2);
+        DMA_Cmd(DMA1_Channel2, DISABLE);
+        DMA_Cmd(DMA1_Channel3, DISABLE);
+        /* 将接收的数据拷贝到模块快照 */
+        memcpy(hc165_snapshot, spi_dma_rx_buf, HC165_COUNT);
+        dma_transfer_complete_flag = 1;
+    }
 }
