@@ -1,0 +1,25 @@
+{
+    "configurations": [
+        {
+            "name": "WCH",
+            "compilerPath": "F:\\MounRiver\\MounRiver_Studio2\\resources\\app\\resources\\win32\\components\\WCH\\Toolchain\\RISC-V Embedded GCC\\bin\\riscv-none-embed-gcc.exe",
+            "includePath": [
+                "${workspaceFolder}/Debug",
+                "${workspaceFolder}/Core",
+                "${workspaceFolder}/User",
+                "${workspaceFolder}/Peripheral/inc",
+                "${workspaceFolder}/**"
+            ],
+            "browse": {
+                "path": [
+                    "${workspaceFolder}/Debug",
+                    "${workspaceFolder}/Core",
+                    "${workspaceFolder}/User",
+                    "${workspaceFolder}/Peripheral/inc",
+                    "${workspaceFolder}/**"
+                ]
+            }
+        }
+    ],
+    "version": 4
+}
