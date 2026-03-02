@@ -1,6 +1,6 @@
 #include "debug.h"
 #include "app.h"
-#include "key.h"
+#include "usb_lib.h"
 
 /* Global typedef */
 
@@ -25,7 +25,6 @@ int main(void)
     USART_Printf_Init(921600);
     PRINT("SystemClk:%d\r\n", SystemCoreClock);
 #endif
-
     app_init();
     while (1)
     {

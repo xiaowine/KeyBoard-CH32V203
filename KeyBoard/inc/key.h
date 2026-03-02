@@ -31,6 +31,7 @@ RAM u8 key_transfer_complete(void);
 RAM void key_copy_snapshot(u8 dest[HC165_COUNT]);
 
 RAM void output_data(const u8 rx_buf[HC165_COUNT]);
+RAM u8 key_is_pressed(u8 button_index);
 // u8 *gekey_filtered(u8 attempts, unsigned int delay_ms);
 
 #endif

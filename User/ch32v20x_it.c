@@ -4,11 +4,11 @@
  * Version            : V1.0.0
  * Date               : 2023/12/29
  * Description        : Main Interrupt Service Routines.
-*********************************************************************************
-* Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
-* Attention: This software (modified or not) and binary are used for 
-* microcontroller manufactured by Nanjing Qinheng Microelectronics.
-*******************************************************************************/
+ *********************************************************************************
+ * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
+ * Attention: This software (modified or not) and binary are used for
+ * microcontroller manufactured by Nanjing Qinheng Microelectronics.
+ *******************************************************************************/
 #include "ch32v20x_it.h"
 
 void NMI_Handler(void) __attribute__((interrupt("WCH-Interrupt-fast")));
@@ -37,10 +37,9 @@ void NMI_Handler(void)
  */
 void HardFault_Handler(void)
 {
-  NVIC_SystemReset();
+  PRINT("!!!!!!Hard Fault detected!!!!!!!\r\n");
+  // NVIC_SystemReset();
   while (1)
   {
   }
 }
-
-

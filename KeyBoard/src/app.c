@@ -1,14 +1,19 @@
 #include "app.h"
 #include "key.h"
+#include "usb_lib.h"
+#include "usb_pwr.h"
 #include <string.h>
 
 static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
 static u16 scan_tick_counter = 0;
 static u8 last_snapshot[HC165_COUNT];
+static u8 key_pressed_count = 0;
+static u8 debug = 0;
 
 void app_init(void)
 {
 
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     // IO 初始化
     {
         RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
@@ -39,32 +44,32 @@ void app_init(void)
 // {
 //     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
-//     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-//     TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-//     TIM_TimeBaseStructure.TIM_Prescaler = 0x0;
-//     TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
-//     TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-//     TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-//     TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+//  TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+//  TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
+//  TIM_TimeBaseStructure.TIM_Prescaler = 0x0;
+//  TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
+//  TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+//  TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+//  TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
 
-//     TIM_EncoderInterfaceConfig(TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+//  TIM_EncoderInterfaceConfig(TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
 
-//     TIM_ICInitTypeDef TIM_ICInitStructure;
-//     TIM_ICStructInit(&TIM_ICInitStructure);
-//     TIM_ICInitStructure.TIM_ICFilter = 10;
-//     TIM_ICInit(TIM2, &TIM_ICInitStructure);
+//  TIM_ICInitTypeDef TIM_ICInitStructure;
+//  TIM_ICStructInit(&TIM_ICInitStructure);
+//  TIM_ICInitStructure.TIM_ICFilter = 10;
+//  TIM_ICInit(TIM2, &TIM_ICInitStructure);
 
-//     NVIC_InitTypeDef NVIC_InitStructure;
-//     NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-//     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-//     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-//     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-//     NVIC_Init(&NVIC_InitStructure);
+//  NVIC_InitTypeDef NVIC_InitStructure;
+//  NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+//  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+//  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+//  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+//  NVIC_Init(&NVIC_InitStructure);
 
-//     TIM_ClearFlag(TIM2, TIM_FLAG_Update);
-//     TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
-//     TIM_SetCounter(TIM2, (TIM_TimeBaseStructure.TIM_Period + 1) / 2);
-//     TIM_Cmd(TIM2, ENABLE);
+//  TIM_ClearFlag(TIM2, TIM_FLAG_Update);
+//  TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+//  TIM_SetCounter(TIM2, (TIM_TimeBaseStructure.TIM_Period + 1) / 2);
+//  TIM_Cmd(TIM2, ENABLE);
 // }
 #pragma endregion
 
@@ -110,6 +115,13 @@ void app_init(void)
         TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
         TIM_Cmd(TIM3, ENABLE);
     }
+
+    GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
+    Set_USBConfig();
+    USB_Init();
+    USB_Interrupts_Config();
+
+    PRINT("App Init OK!\r\n");
 }
 
 RAM void app_run(void)
@@ -137,10 +149,34 @@ RAM void app_run(void)
     }
 
     /* 定期输出数据（每秒一次）*/
-    if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ )
+    if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
     {
+        if (key_is_pressed(2))
+        {
+            key_pressed_count = key_pressed_count + 1;
+        }
+        else
+        {
+            key_pressed_count = 0;
+        }
         scan_tick_counter = 0;
         output_data((const u8 *)last_snapshot);
+    }
+    if (key_pressed_count >= 2)
+    {
+        if (debug)
+        {
+            debug = 0;
+            GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
+            PRINT("Debug mode disabled\r\n");
+        }
+        else
+        {
+            debug = 1;
+            GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, DISABLE);
+            PRINT("Debug mode enabled\r\n");
+        }
+        key_pressed_count = 0;
     }
 }
 

@@ -5,6 +5,7 @@
             "compilerPath": "F:\\MounRiver\\MounRiver_Studio2\\resources\\app\\resources\\win32\\components\\WCH\\Toolchain\\RISC-V Embedded GCC\\bin\\riscv-none-embed-gcc.exe",
             "includePath": [
                 "${workspaceFolder}/Debug",
+                "${workspaceFolder}/USBLIB",
                 "${workspaceFolder}/Core",
                 "${workspaceFolder}/User",
                 "${workspaceFolder}/Peripheral/inc",
@@ -13,6 +14,7 @@
             "browse": {
                 "path": [
                     "${workspaceFolder}/Debug",
+                    "${workspaceFolder}/USBLIB",
                     "${workspaceFolder}/Core",
                     "${workspaceFolder}/User",
                     "${workspaceFolder}/Peripheral/inc",
