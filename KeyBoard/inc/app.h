@@ -3,7 +3,7 @@
 #define __APP_H
 #include "debug.h"
 
-#define KEYBOARD_SCAN_FREQUENCY_HZ 500U
+#define KEYBOARD_SCAN_FREQUENCY_HZ 1000U
 
 /* 键盘扫描状态机 */
 typedef enum

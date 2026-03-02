@@ -13,7 +13,7 @@
 #ifndef __USB_CONF_H
 #define __USB_CONF_H
 
-#define EP_NUM (2)
+#define EP_NUM (2) // EP0控制端点 + 1个键盘端点
 
 /* Buffer Description Table */
 /* buffer table base address */
@@ -22,12 +22,12 @@
 
 /* EP0  */
 /* rx/tx buffer base address */
-#define ENDP0_RXADDR (0x40)
-#define ENDP0_TXADDR (0x80)
+#define ENDP0_RXADDR (0x40) // 64字节: 0x40-0x7F
+#define ENDP0_TXADDR (0x80) // 64字节: 0x80-0xBF
 
 /* EP1  */
 /* tx buffer base address */
-#define ENDP1_TXADDR (0xC0)
+#define ENDP1_TXADDR (0xC0) // 8字节: 0xC0-0xC7
 
 /* ISTR events */
 /* IMR_MSK */

@@ -1,7 +1,7 @@
 #include "app.h"
 #include "key.h"
 #include "usb_lib.h"
-#include "usb_pwr.h"
+#include "usb_desc.h"
 #include <string.h>
 
 static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
@@ -9,6 +9,9 @@ static u16 scan_tick_counter = 0;
 static u8 last_snapshot[HC165_COUNT];
 static u8 key_pressed_count = 0;
 static u8 debug = 0;
+
+uint8_t KB_Data_Pack[DEF_ENDP_SIZE_KB] = {0x00}; // Keyboard IN Data Packet
+uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);
 
 void app_init(void)
 {
@@ -192,6 +195,18 @@ INTF void TIM3_IRQHandler(void)
             key_state = KEY_STATE_SCANNING;
             key_start_scan();
         }
+        // if (key_is_pressed(16))
+        // {
+        //     KB_Data_Pack[2] = 0x1A;
+        //     KB_Data_Pack[3] = 0x1B;
+        // }
+        // else
+        // {
+        //     KB_Data_Pack[2] = 0x00;
+        //     KB_Data_Pack[3] = 0x00;
+        // }
+
+        // uint8_t status = USBD_ENDPx_DataUp(ENDP1, KB_Data_Pack, DEF_ENDP_SIZE_KB);
     }
     TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
 }

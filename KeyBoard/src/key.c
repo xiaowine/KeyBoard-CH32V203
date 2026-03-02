@@ -6,8 +6,6 @@ static u8 spi_dma_rx_buf[HC165_COUNT];
 static u8 hc165_snapshot[HC165_COUNT];
 static volatile u8 dma_transfer_complete_flag = 0;
 
-/* 向前声明：保留原低级触发名以兼容 */
-void getkey (void);
 
 void key_init (void) {
     /* SPI+DMA 设置，用于通过 SPI1 读取 74HC165 */
