@@ -4,6 +4,8 @@
 #include "usb_desc.h"
 #include <string.h>
 
+#include "custom_endpoint.h"
+
 static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
 static u16 scan_tick_counter = 0;
 static u8 last_snapshot[HC165_COUNT];
@@ -124,11 +126,14 @@ void app_init(void)
     USB_Init();
     USB_Interrupts_Config();
 
+    custom_endpoint_init();
+
     PRINT("App Init OK!\r\n");
 }
 
 RAM void app_run(void)
 {
+    custom_endpoint_process();
     switch (key_state)
     {
     case KEY_STATE_IDLE:
@@ -164,6 +169,7 @@ RAM void app_run(void)
         }
         scan_tick_counter = 0;
         output_data((const u8 *)last_snapshot);
+        custom_endpoint_send((const u8 *)last_snapshot, HC165_COUNT);
     }
     if (key_pressed_count >= 2)
     {
@@ -209,4 +215,9 @@ INTF void TIM3_IRQHandler(void)
         // uint8_t status = USBD_ENDPx_DataUp(ENDP1, KB_Data_Pack, DEF_ENDP_SIZE_KB);
     }
     TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
+}
+
+void custom_data_received_callback(custom_packet_t *packet)
+{
+    PRINT("App: Custom data received callback, cmd=0x%02X, len=%d\r\n", packet->cmd, packet->len);
 }

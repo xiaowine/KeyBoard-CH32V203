@@ -28,10 +28,12 @@ extern "C"
 
 #define DEF_USBD_UEP0_SIZE 64
 #define DEF_ENDP_SIZE_KB 8
+#define DEF_ENDP_SIZE_CUSTOM 32
 
 #define USBD_SIZE_DEVICE_DESC 18
-#define USBD_SIZE_CONFIG_DESC 109
+#define USBD_SIZE_CONFIG_DESC 141
 #define USBD_SIZE_REPORT_DESC_KB 62
+#define USBD_SIZE_REPORT_DESC_CUSTOM 36
 #define USBD_SIZE_STRING_LANGID 4
 #define USBD_SIZE_STRING_VENDOR 14
 #define USBD_SIZE_STRING_PRODUCT 18
@@ -47,6 +49,7 @@ extern "C"
   extern const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT];
   extern uint8_t USBD_StringSerial[USBD_SIZE_STRING_SERIAL];
   extern const uint8_t USBD_KeyRepDesc[USBD_SIZE_REPORT_DESC_KB];
+  extern const uint8_t USBD_CustomRepDesc[USBD_SIZE_REPORT_DESC_CUSTOM];
 
 #ifdef __cplusplus
 }

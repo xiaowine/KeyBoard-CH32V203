@@ -40,7 +40,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x09,                                                     // bLength
     0x02,                                                     // bDescriptorType
     USBD_SIZE_CONFIG_DESC & 0xFF, USBD_SIZE_CONFIG_DESC >> 8, // wTotalLength
-    0x04,                                                     // bNumInterfaces
+    0x05,                                                     // bNumInterfaces
     0x01,                                                     // bConfigurationValue
     0x00,                                                     // iConfiguration
     0xA0,                                                     // bmAttributes: Bus Powered; Remote Wakeup
@@ -72,7 +72,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x81,                                           // bEndpointAddress: IN Endpoint 1
     0x03,                                           // bmAttributes
     DEF_ENDP_SIZE_KB & 0xFF, DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
-    0x0A,                                           // bInterval: 10mS
+    0x01,                                           // bInterval: 1mS
 
     /* Interface Descriptor (Keyboard) */
     0x09, // bLength
@@ -100,7 +100,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x82,                                           // bEndpointAddress: IN Endpoint 2
     0x03,                                           // bmAttributes
     DEF_ENDP_SIZE_KB & 0xFF, DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
-    0x0A,                                           // bInterval: 10mS
+    0x01,                                           // bInterval: 1mS
 
     /* Interface Descriptor (Keyboard) */
     0x09, // bLength
@@ -156,7 +156,43 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x84,                                           // bEndpointAddress: IN Endpoint 4
     0x03,                                           // bmAttributes
     DEF_ENDP_SIZE_KB & 0xFF, DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
-    0x01                                            // bInterval: 1mS
+    0x0A,                                           // bInterval: 10mS
+
+    /* Interface Descriptor (Custom) */
+    0x09, // bLength
+    0x04, // bDescriptorType
+    0x04, // bInterfaceNumber
+    0x00, // bAlternateSetting
+    0x02, // bNumEndpoints
+    0x03, // bInterfaceClass
+    0x00, // bInterfaceSubClass
+    0x00, // bInterfaceProtocol
+    0x00, // iInterface
+
+    /* HID Descriptor (Custom) */
+    0x09,                                                                   // bLength
+    0x21,                                                                   // bDescriptorType
+    0x11, 0x01,                                                             // bcdHID
+    0x00,                                                                   // bCountryCode
+    0x01,                                                                   // bNumDescriptors
+    0x22,                                                                   // bDescriptorType
+    USBD_SIZE_REPORT_DESC_CUSTOM & 0xFF, USBD_SIZE_REPORT_DESC_CUSTOM >> 8, // wDescriptorLength
+
+    /* Endpoint Descriptor (Custom IN) */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x85,                                                   // bEndpointAddress: IN Endpoint 5
+    0x03,                                                   // bmAttributes
+    DEF_ENDP_SIZE_CUSTOM & 0xFF, DEF_ENDP_SIZE_CUSTOM >> 8, // wMaxPacketSize
+    0x01,                                                   // bInterval: 1mS
+
+    /* Endpoint Descriptor (Custom OUT) */
+    0x07,                                                   // bLength
+    0x05,                                                   // bDescriptorType
+    0x05,                                                   // bEndpointAddress: OUT Endpoint 5
+    0x03,                                                   // bmAttributes
+    DEF_ENDP_SIZE_CUSTOM & 0xFF, DEF_ENDP_SIZE_CUSTOM >> 8, // wMaxPacketSize
+    0x0A                                                    // bInterval: 10mS
 };
 
 /* USB String Descriptors */
@@ -217,5 +253,28 @@ const uint8_t USBD_KeyRepDesc[USBD_SIZE_REPORT_DESC_KB] =
         0x19, 0x00,       // Usage Minimum (0)
         0x29, 0x91,       // Usage Maximum (145)
         0x81, 0x00,       // Input(Data,Array,Absolute)
+        0xC0              // End Collection
+};
+
+/* Custom HID Report Descriptor */
+const uint8_t USBD_CustomRepDesc[USBD_SIZE_REPORT_DESC_CUSTOM] =
+    {
+        0x06, 0x00, 0xFF, // Usage Page (Vendor Defined 0xFF00)
+        0x09, 0x01,       // Usage (0x01)
+        0xA1, 0x01,       // Collection (Application)
+        0x85, 0x01,       // Report ID (1)
+        0x09, 0x01,       // Usage (0x01)
+        0x15, 0x00,       // Logical Minimum (0)
+        0x25, 0xFF,       // Logical Maximum (255)
+        0x95, 0x1F,       // Report Count (31)  // 32-1 for Report ID
+        0x75, 0x08,       // Report Size (8)
+        0x81, 0x02,       // Input (Data,Variable,Absolute)
+        0x85, 0x02,       // Report ID (2)
+        0x09, 0x01,       // Usage (0x01)
+        0x15, 0x00,       // Logical Minimum (0)
+        0x25, 0xFF,       // Logical Maximum (255)
+        0x95, 0x1F,       // Report Count (31)  // 32-1 for Report ID
+        0x75, 0x08,       // Report Size (8)
+        0x91, 0x02,       // Output (Data,Variable,Absolute)
         0xC0              // End Collection
 };

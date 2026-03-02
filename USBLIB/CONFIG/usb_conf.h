@@ -13,7 +13,7 @@
 #ifndef __USB_CONF_H
 #define __USB_CONF_H
 
-#define EP_NUM (5)
+#define EP_NUM (6)
 
 /* Buffer Description Table */
 /* buffer table base address */
@@ -31,6 +31,8 @@
 #define ENDP2_TXADDR (ENDP1_TXADDR + 0x10)
 #define ENDP3_TXADDR (ENDP2_TXADDR + 0x10)
 #define ENDP4_TXADDR (ENDP3_TXADDR + 0x10)
+#define ENDP5_TXADDR (ENDP4_TXADDR + 0x10)
+#define ENDP5_RXADDR (ENDP5_TXADDR + 0x40)
 
 /* ISTR events */
 /* IMR_MSK */
@@ -53,8 +55,8 @@
 // #define  EP2_IN_Callback   NOP_Process
 // #define  EP3_IN_Callback   NOP_Process
 // #define EP4_IN_Callback   NOP_Process
-#define EP5_IN_Callback NOP_Process
-#define EP5_IN_Callback NOP_Process
+// #define EP5_IN_Callback   NOP_Process
+#define EP6_IN_Callback NOP_Process
 #define EP6_IN_Callback NOP_Process
 #define EP7_IN_Callback NOP_Process
 
@@ -62,7 +64,7 @@
 #define EP2_OUT_Callback NOP_Process
 #define EP3_OUT_Callback NOP_Process
 #define EP4_OUT_Callback NOP_Process
-#define EP5_OUT_Callback NOP_Process
+// #define EP5_OUT_Callback NOP_Process
 #define EP6_OUT_Callback NOP_Process
 #define EP7_OUT_Callback NOP_Process
 
