@@ -28,7 +28,6 @@ extern "C"
 
 #define DEF_USBD_UEP0_SIZE 64
 #define DEF_ENDP_SIZE_KB 8
-#define DEF_ENDP_SIZE_MS 4
 
 #define USBD_SIZE_DEVICE_DESC 18
 #define USBD_SIZE_CONFIG_DESC 109
