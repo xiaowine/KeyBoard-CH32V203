@@ -44,19 +44,12 @@ void key_init(void)
     DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 
     static uint8_t dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
-    DMA_InitStructure.DMA_PeripheralBaseAddr = (u32)&SPI1->DATAR;
     DMA_InitStructure.DMA_MemoryBaseAddr = (u32)dummy_tx;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
     DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable; /* 发送固定值 */
     DMA_Init(DMA1_Channel3, &DMA_InitStructure);
 
-    DMA_Cmd(DMA1_Channel2, DISABLE);
-    DMA_SetCurrDataCounter(DMA1_Channel2, HC165_COUNT);
-    DMA_Cmd(DMA1_Channel2, ENABLE);
     DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
-
-    DMA_SetCurrDataCounter(DMA1_Channel3, HC165_COUNT);
-    DMA_ClearITPendingBit(DMA1_IT_TC3);
 
     /* DMA 通道2 的 NVIC 配置 */
     NVIC_InitTypeDef NVIC_DMA_InitStructure;
@@ -71,17 +64,17 @@ void key_init(void)
     SPI_Cmd(SPI1, ENABLE);
 }
 
-RAM_FUNC u8 key_transfer_complete(void)
+RAM u8 key_transfer_complete(void)
 {
     return dma_transfer_complete_flag;
 }
 
-RAM_FUNC void key_copy_snapshot(u8 dest[HC165_COUNT])
+RAM void key_copy_snapshot(u8 dest[HC165_COUNT])
 {
     memcpy(dest, hc165_snapshot, HC165_COUNT);
 }
 
-RAM_FUNC void key_start_scan(void)
+RAM void key_start_scan(void)
 {
     DMA_Cmd(DMA1_Channel2, DISABLE); /* RX（接收）*/
     DMA_Cmd(DMA1_Channel3, DISABLE); /* TX（发送）*/
@@ -110,7 +103,7 @@ RAM_FUNC void key_start_scan(void)
     DMA_Cmd(DMA1_Channel3, ENABLE);
 }
 
-RAM_FUNC void output_data(const u8 rx_buf[HC165_COUNT])
+RAM void output_data(const u8 rx_buf[HC165_COUNT])
 {
     char buffer[256];
     int offset = 0;

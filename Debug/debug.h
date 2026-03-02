@@ -40,8 +40,7 @@ extern "C"
 #endif
 
 #define INTF __attribute__((interrupt("WCH-Interrupt-fast")))
-#define RAM_FUNC __attribute__((section(".ramfunc")))
-#define RAM_DATA __attribute__((section(".ramdata")))
+#define RAM __attribute__((section(".ramfunc")))
 
   void Delay_Init(void);
   void Delay_Us(uint32_t n);

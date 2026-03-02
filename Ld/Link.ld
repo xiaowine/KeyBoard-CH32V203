@@ -89,23 +89,6 @@ SECTIONS
 		PROVIDE(_eramfunc = .);
 	} >RAM AT>FLASH
 
-	/* RAM变量分区 - 存储需要在RAM中的重要变量 */
-	.ramdata_load_addr :
-	{
-		. = ALIGN(4);
-		PROVIDE(_ramdata_lma = .);
-	} >FLASH AT>FLASH
-
-	.ramdata :
-	{
-		. = ALIGN(4);
-		PROVIDE(_ramdata_vma = .);
-		*(.ramdata)
-		*(.ramdata.*)
-		. = ALIGN(4);
-		PROVIDE(_eramdata = .);
-	} >RAM AT>FLASH
-
 	.preinit_array  :
 	{
 	  PROVIDE_HIDDEN (__preinit_array_start = .);

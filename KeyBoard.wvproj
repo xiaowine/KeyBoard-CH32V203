@@ -47,7 +47,7 @@
 					"${project}/Startup/startup_ch32v20x_D8.S"
 				],
 				"optimization": {
-					"level": "size",
+					"level": "none",
 					"message_length": true,
 					"char_is_signed": true,
 					"function_sections": true,

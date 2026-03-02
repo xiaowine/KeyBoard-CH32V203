@@ -14,6 +14,6 @@ typedef enum
 } key_scan_state_t;
 
 void app_init(void);
-RAM_FUNC void app_run(void);
+RAM void app_run(void);
 
 #endif

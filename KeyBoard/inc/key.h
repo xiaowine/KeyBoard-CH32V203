@@ -26,11 +26,11 @@
 
 /* 通过 SPI+DMA 控制 74HC165 读取的模块 API */
 void key_init(void);
-RAM_FUNC void key_start_scan(void);
-RAM_FUNC u8 key_transfer_complete(void);
-RAM_FUNC void key_copy_snapshot(u8 dest[HC165_COUNT]);
+RAM void key_start_scan(void);
+RAM u8 key_transfer_complete(void);
+RAM void key_copy_snapshot(u8 dest[HC165_COUNT]);
 
-RAM_FUNC void output_data(const u8 rx_buf[HC165_COUNT]);
+RAM void output_data(const u8 rx_buf[HC165_COUNT]);
 // u8 *gekey_filtered(u8 attempts, unsigned int delay_ms);
 
 #endif

@@ -112,7 +112,7 @@ void app_init(void)
     }
 }
 
-RAM_FUNC void app_run(void)
+RAM void app_run(void)
 {
     switch (key_state)
     {
@@ -137,7 +137,7 @@ RAM_FUNC void app_run(void)
     }
 
     /* 定期输出数据（每秒一次）*/
-    if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
+    if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ )
     {
         scan_tick_counter = 0;
         output_data((const u8 *)last_snapshot);
