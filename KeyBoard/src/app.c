@@ -4,7 +4,7 @@
 #include "usb_desc.h"
 #include <string.h>
 
-#include "custom_endpoint.h"
+#include "hid_comm.h"
 
 static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
 static u16 scan_tick_counter = 0;
@@ -12,8 +12,10 @@ static u8 last_snapshot[HC165_COUNT];
 static u8 key_pressed_count = 0;
 static u8 debug = 0;
 
-uint8_t KB_Data_Pack[DEF_ENDP_SIZE_KB] = {0x00}; // Keyboard IN Data Packet
-uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);
+// uint8_t KB_Data_Pack[DEF_ENDP_SIZE_KB] = {0x00}; // Keyboard IN Data Packet
+// uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);
+
+void my_hid_comm_callback(uint8_t *data, uint16_t len);
 
 void app_init(void)
 {
@@ -126,14 +128,15 @@ void app_init(void)
     USB_Init();
     USB_Interrupts_Config();
 
-    custom_endpoint_init();
+    // 注册 HID 通信回调函数
+    hid_comm_set_callback(my_hid_comm_callback);
 
     PRINT("App Init OK!\r\n");
 }
 
 RAM void app_run(void)
 {
-    custom_endpoint_process();
+    hid_comm_process();
     switch (key_state)
     {
     case KEY_STATE_IDLE:
@@ -169,7 +172,7 @@ RAM void app_run(void)
         }
         scan_tick_counter = 0;
         output_data((const u8 *)last_snapshot);
-        custom_endpoint_send((const u8 *)last_snapshot, HC165_COUNT);
+        hid_comm_send((u8 *)last_snapshot, HC165_COUNT);
     }
     if (key_pressed_count >= 2)
     {
@@ -217,7 +220,12 @@ INTF void TIM3_IRQHandler(void)
     TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
 }
 
-void custom_data_received_callback(custom_packet_t *packet)
+void my_hid_comm_callback(uint8_t *data, uint16_t len)
 {
-    PRINT("App: Custom data received callback, cmd=0x%02X, len=%d\r\n", packet->cmd, packet->len);
+    PRINT("App: Received %d bytes from HID comm\r\n", len);
+    // 这里可以添加对接收到的数据的处理逻辑
+    for (uint16_t i = 0; i < len; i++)
+    {
+        PRINT("  Byte %d: 0x%02X\r\n", i, data[i]);
+    }
 }

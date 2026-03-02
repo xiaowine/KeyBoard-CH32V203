@@ -19,7 +19,7 @@
 
 uint8_t USBD_Endp1_Busy, USBD_Endp2_Busy, USBD_Endp3_Busy, USBD_Endp4_Busy, USBD_Endp5_Busy;
 u16 USB_Rx_Cnt = 0;
-volatile uint8_t USBD_CustomData_Buffer[DEF_ENDP_SIZE_CUSTOM] = {0}; // Custom endpoint data buffer
+volatile uint8_t USBD_HId_Comm_Data_Buffer[DEF_ENDP_SIZE_CUSTOM] = {0}; // HID communication data buffer
 
 /*********************************************************************
  * @fn      EP1_IN_Callback
@@ -91,19 +91,7 @@ void EP5_IN_Callback(void)
 void EP5_OUT_Callback(void)
 {
 	// Read received data
-	USB_Rx_Cnt = USB_SIL_Read(EP5_OUT, (uint8_t *)USBD_CustomData_Buffer);
-
-	// Check Report ID and adjust data pointer if needed
-	if (USB_Rx_Cnt > 0 && USBD_CustomData_Buffer[0] == 0x02)
-	{
-		// Valid output report with Report ID 2
-		// Shift data to remove Report ID byte
-		for (uint16_t i = 0; i < USB_Rx_Cnt - 1; i++)
-		{
-			USBD_CustomData_Buffer[i] = USBD_CustomData_Buffer[i + 1];
-		}
-		USB_Rx_Cnt--; // Decrement count to exclude Report ID
-	}
+	USB_Rx_Cnt = USB_SIL_Read(EP5_OUT, (uint8_t *)USBD_HId_Comm_Data_Buffer);
 
 	// Set EP5 RX valid for next reception
 	SetEPRxValid(ENDP5);
@@ -194,7 +182,7 @@ uint16_t USBD_GetCustomData(uint8_t *pbuf, uint16_t max_len)
 	uint16_t copy_len = (USB_Rx_Cnt > max_len) ? max_len : USB_Rx_Cnt;
 	if (copy_len > 0)
 	{
-		memcpy(pbuf, (uint8_t *)USBD_CustomData_Buffer, copy_len);
+		memcpy(pbuf, (uint8_t *)USBD_HId_Comm_Data_Buffer, copy_len);
 		USB_Rx_Cnt = 0; // Clear after reading
 	}
 	return copy_len;
