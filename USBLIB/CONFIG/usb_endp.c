@@ -16,7 +16,7 @@
 #include "usb_istr.h"
 #include "usb_pwr.h"
 
-uint8_t USBD_Endp1_Busy;
+uint8_t USBD_Endp1_Busy, USBD_Endp2_Busy, USBD_Endp3_Busy, USBD_Endp4_Busy;
 u16 USB_Rx_Cnt = 0;
 
 /*********************************************************************
@@ -29,6 +29,42 @@ u16 USB_Rx_Cnt = 0;
 void EP1_IN_Callback(void)
 {
 	USBD_Endp1_Busy = 0;
+}
+
+/*********************************************************************
+ * @fn      EP2_IN_Callback
+ *
+ * @brief  Endpoint 2 IN.
+ *
+ * @return  none
+ */
+void EP2_IN_Callback(void)
+{
+	USBD_Endp2_Busy = 0;
+}
+
+/*********************************************************************
+ * @fn      EP3_IN_Callback
+ *
+ * @brief  Endpoint 3 IN.
+ *
+ * @return  none
+ */
+void EP3_IN_Callback(void)
+{
+	USBD_Endp3_Busy = 0;
+}
+
+/*********************************************************************
+ * @fn      EP4_IN_Callback
+ *
+ * @brief  Endpoint 4 IN.
+ *
+ * @return  none
+ */
+void EP4_IN_Callback(void)
+{
+	USBD_Endp4_Busy = 0;
 }
 
 /*********************************************************************
@@ -53,6 +89,36 @@ uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len)
 		USB_SIL_Write(EP1_IN, pbuf, len);
 		USBD_Endp1_Busy = 1;
 		SetEPTxStatus(ENDP1, EP_TX_VALID);
+	}
+	else if (endp == ENDP2)
+	{
+		if (USBD_Endp2_Busy)
+		{
+			return USB_ERROR;
+		}
+		USB_SIL_Write(EP2_IN, pbuf, len);
+		USBD_Endp2_Busy = 1;
+		SetEPTxStatus(ENDP2, EP_TX_VALID);
+	}
+	else if (endp == ENDP3)
+	{
+		if (USBD_Endp3_Busy)
+		{
+			return USB_ERROR;
+		}
+		USB_SIL_Write(EP3_IN, pbuf, len);
+		USBD_Endp3_Busy = 1;
+		SetEPTxStatus(ENDP3, EP_TX_VALID);
+	}
+	else if (endp == ENDP4)
+	{
+		if (USBD_Endp4_Busy)
+		{
+			return USB_ERROR;
+		}
+		USB_SIL_Write(EP4_IN, pbuf, len);
+		USBD_Endp4_Busy = 1;
+		SetEPTxStatus(ENDP4, EP_TX_VALID);
 	}
 	else
 	{

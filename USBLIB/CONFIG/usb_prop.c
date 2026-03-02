@@ -18,11 +18,11 @@
 
 uint8_t Request = 0;
 
-extern uint8_t USBD_Endp1_Busy;
+extern uint8_t USBD_Endp1_Busy, USBD_Endp2_Busy, USBD_Endp3_Busy, USBD_Endp4_Busy;
 volatile uint8_t HIDReportOut[8] = {0};
 volatile uint8_t USBD_Sleep_Status = 0x00;
-volatile uint8_t HID_Idle_Value[2] = {0};
-volatile uint8_t HID_Protocol_Value[2] = {0};
+volatile uint8_t HID_Idle_Value[4] = {0};
+volatile uint8_t HID_Protocol_Value[4] = {0};
 
 DEVICE Device_Table =
     {
@@ -73,13 +73,21 @@ ONE_DESCRIPTOR String_Descriptor[4] =
         {(uint8_t *)USBD_StringProduct, USBD_SIZE_STRING_PRODUCT},
         {(uint8_t *)USBD_StringSerial, USBD_SIZE_STRING_SERIAL}};
 
-ONE_DESCRIPTOR Report_Descriptor[1] =
+ONE_DESCRIPTOR Report_Descriptor[4] =
     {
-        {(uint8_t *)USBD_KeyRepDesc, USBD_SIZE_REPORT_DESC_KB}};
+        {(uint8_t *)USBD_KeyRepDesc, USBD_SIZE_REPORT_DESC_KB},
+        {(uint8_t *)USBD_KeyRepDesc, USBD_SIZE_REPORT_DESC_KB},
+        {(uint8_t *)USBD_KeyRepDesc, USBD_SIZE_REPORT_DESC_KB},
+        {(uint8_t *)USBD_KeyRepDesc, USBD_SIZE_REPORT_DESC_KB},
+};
 
-ONE_DESCRIPTOR Hid_Descriptor[1] =
+ONE_DESCRIPTOR Hid_Descriptor[4] =
     {
-        {(uint8_t *)&USBD_ConfigDescriptor[18], 0x09}};
+        {(uint8_t *)&USBD_ConfigDescriptor[18], 0x09},
+        {(uint8_t *)&USBD_ConfigDescriptor[43], 0x09},
+        {(uint8_t *)&USBD_ConfigDescriptor[68], 0x09},
+        {(uint8_t *)&USBD_ConfigDescriptor[93], 0x09},
+};
 
 /*********************************************************************
  * @fn      USBD_SetConfiguration.
@@ -211,9 +219,30 @@ void USBD_Reset(void)
   _ClearDTOG_TX(ENDP1);
   _ClearDTOG_RX(ENDP1);
 
+  SetEPType(ENDP2, EP_INTERRUPT);
+  SetEPTxAddr(ENDP2, ENDP2_TXADDR);
+  SetEPTxStatus(ENDP2, EP_TX_NAK);
+  _ClearDTOG_TX(ENDP2);
+  _ClearDTOG_RX(ENDP2);
+
+  SetEPType(ENDP3, EP_INTERRUPT);
+  SetEPTxAddr(ENDP3, ENDP3_TXADDR);
+  SetEPTxStatus(ENDP3, EP_TX_NAK);
+  _ClearDTOG_TX(ENDP3);
+  _ClearDTOG_RX(ENDP3);
+
+  SetEPType(ENDP4, EP_INTERRUPT);
+  SetEPTxAddr(ENDP4, ENDP4_TXADDR);
+  SetEPTxStatus(ENDP4, EP_TX_NAK);
+  _ClearDTOG_TX(ENDP4);
+  _ClearDTOG_RX(ENDP4);
+
   SetDeviceAddress(0);
 
   USBD_Endp1_Busy = 0;
+  USBD_Endp2_Busy = 0;
+  USBD_Endp3_Busy = 0;
+  USBD_Endp4_Busy = 0;
 
   bDeviceState = ATTACHED;
 }
@@ -281,7 +310,7 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
 uint8_t *USBD_GetReportDescriptor(uint16_t Length)
 {
   uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-  if (wIndex0 > 1)
+  if (wIndex0 > 3)
   {
     return NULL;
   }
@@ -303,7 +332,7 @@ uint8_t *USBD_GetReportDescriptor(uint16_t Length)
 uint8_t *USBD_GetHidDescriptor(uint16_t Length)
 {
   uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-  if (wIndex0 > 1)
+  if (wIndex0 > 3)
   {
     return NULL;
   }
@@ -330,7 +359,7 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
   {
     return USB_UNSUPPORT;
   }
-  else if (Interface > 0)
+  else if (Interface > 3)
   {
     return USB_UNSUPPORT;
   }
@@ -432,7 +461,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
   {
     if (Request_No == HID_SET_IDLE)
     {
-      if (wIndex0 > 1)
+      if (wIndex0 > 3)
       {
         return USB_UNSUPPORT;
       }
@@ -443,7 +472,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
     }
     else if (Request_No == HID_SET_PROTOCOL)
     {
-      if (wIndex0 > 1)
+      if (wIndex0 > 3)
       {
         return USB_UNSUPPORT;
       }
@@ -494,7 +523,7 @@ uint8_t *HID_Set_Report(uint16_t Length)
 uint8_t *HID_Get_Idle(uint16_t Length)
 {
   uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-  if (wIndex0 > 1)
+  if (wIndex0 > 3)
   {
     return NULL;
   }
@@ -515,7 +544,7 @@ uint8_t *HID_Get_Idle(uint16_t Length)
 uint8_t *HID_Get_Protocol(uint16_t Length)
 {
   uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-  if (wIndex0 > 1)
+  if (wIndex0 > 3)
   {
     return NULL;
   }
