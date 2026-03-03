@@ -1,0 +1,105 @@
+name: Build with downloaded toolchain
+
+on:
+  workflow_dispatch:
+    inputs:
+      resourceId:
+        description: 'Resource ID to fetch from the API (overrides default)'
+        required: false
+        default: '1993872528621211649'
+      run-on:
+        description: 'Runner to use (e.g. ubuntu-latest or windows-latest)'
+        required: false
+        default: 'ubuntu-latest'
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs['run-on'] || 'ubuntu-latest' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Fetch toolchain URL
+        run: |
+          echo "Fetching toolchain URL from API..."
+          resourceId="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.resourceId || '1993872528621211649' }}"
+          echo "Using resourceId: $resourceId"
+          response=$(curl -s "https://api.mounriver.com/mountriver/api/version/fetchRecentOpenOcdUrl?resourceId=$resourceId")
+          echo "$response" > response.json
+          code=$(echo "$response" | jq -r '.code')
+          if [ "$code" != "0" ]; then
+            echo "API returned non-zero code: $code"; cat response.json; exit 1
+          fi
+          url=$(echo "$response" | jq -r '.result')
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
+            echo "No result URL in response"; cat response.json; exit 1
+          fi
+          echo "TOOLCHAIN_URL=$url" >> $GITHUB_ENV
+
+      - name: Download and extract toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p toolchain-download
+          cd toolchain-download
+          echo "Downloading $TOOLCHAIN_URL"
+          curl -L --fail -o toolchain.tar.xz "$TOOLCHAIN_URL"
+          echo "Extracting toolchain.tar.xz..."
+          tar -xJf toolchain.tar.xz
+          # If a nested .tar exists, extract it too
+          inner_tar=$(find . -maxdepth 2 -type f -name '*.tar' -print -quit || true)
+          if [ -n "$inner_tar" ]; then
+            echo "Found nested tar: $inner_tar - extracting"
+            tar -xf "$inner_tar"
+          fi
+          # Locate the Toolchain directory we need
+          tool_dir=$(find . -type d -path '*/Toolchain/RISC-V Embedded GCC12' -print -quit || true)
+          if [ -z "$tool_dir" ]; then
+            echo "Could not find 'Toolchain/RISC-V Embedded GCC12' inside downloaded archive"; ls -R .; exit 1
+          fi
+          abs=$(realpath "$tool_dir")
+          echo "TOOLCHAIN_FOLDER=$abs" >> $GITHUB_ENV
+          echo "Toolchain folder set to: $abs"
+
+      - name: Show resolved toolchain path
+        run: |
+          echo "TOOLCHAIN_FOLDER=$TOOLCHAIN_FOLDER"
+
+      - name: Install build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          echo "Installing build dependencies (cmake, build-essential, jq, xz-utils, tar, realpath)..."
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends cmake build-essential jq xz-utils tar realpath pkg-config
+          cmake --version
+
+      - name: Add toolchain bin to PATH
+        run: |
+          if [ -d "$TOOLCHAIN_FOLDER/bin" ]; then
+            echo "Adding $TOOLCHAIN_FOLDER/bin to PATH"
+            echo "PATH=$TOOLCHAIN_FOLDER/bin:$PATH" >> $GITHUB_ENV
+          else
+            echo "Warning: $TOOLCHAIN_FOLDER/bin not found; CMake may not find the cross compiler"
+          fi
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTOOLCHAIN_FOLDER="$TOOLCHAIN_FOLDER"
+
+      - name: Build
+        run: |
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-artifacts
+          path: |
+            obj/KeyBoard.elf
+            obj/KeyBoard.hex
+
+
+
+
