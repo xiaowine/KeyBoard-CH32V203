@@ -11,23 +11,6 @@
 # 如有相关疑问,可通过support@mounriver.com联系我们
 #################################################################################################################################################
 
-
-#############################################################[English Manual]###################################################################
-# Step 1: Confirm that the MRS toolchain has been installed on the machine. Assuming the current platform is Linux, 
-#         the toolchain path is "/path/to/toolchain/RISC-V Embedded GCC12", and the toolchain-related prefix is "riscv-wch-elf-"
-# Step 2: Set the toolchain path, for example, modify and replace the following "set (TOOLCHAIN_FOLDER "/path/to/toolchain/RISC-V Embedded GCC12")"
-# Step 3: Set the prefix of the executable files in the toolchain,for example, modify and replace the following "set(TOOLCHAIN_PREFIX "riscv-wch-elf-")"
-# Step 4: Call "cd your/path/of/project"
-# Step 5: Call "cmake -B build -G "Unix Makefiles""
-# Step 6: Call "cmake --build build"
-# Note:   To run on Windows, you need: a. Install GNU MAKE and add its path (the bin directory) to the system environment PATH. 
-#         Then call the execution of "cmake -B build -G "Unix Makefiles""(Recommanded).
-#         or b. Install MinGW and add its path (the bin directory) to the system environment PATH. 
-#         Then call the execution of "cmake -B build -G "MinGW Makefiles"".
-# If you have any questions, please contact us at support@mounriver.com
-#################################################################################################################################################
-
-
 # Set CMake minimum require
 cmake_minimum_required(VERSION 3.16)
 
@@ -43,55 +26,59 @@ SET(CMAKE_ASM_COMPILER_WORKS TRUE)
 # Use MRS toolchian to compile
 set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12")
 set(TOOLCHAIN_PREFIX "riscv-wch-elf-")
-set(CMAKE_C_COMPILER "${TOOLCHAIN_FOLDER}/bin/riscv-wch-elf-gcc.exe")
-set(CMAKE_CXX_COMPILER "${TOOLCHAIN_FOLDER}/bin/riscv-wch-elf-g++.exe")
-set(CMAKE_ASM_COMPILER "${TOOLCHAIN_FOLDER}/bin/riscv-wch-elf-gcc.exe")
+set(CMAKE_C_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")
+set(CMAKE_CXX_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}g++.exe")
+set(CMAKE_ASM_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")
 set(CMAKE_OBJCOPY "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}objcopy.exe")
-set(CMAKE_OBJDUMP "${TOOLCHAIN_FOLDER}/bin/riscv-wch-elf-objdump.exe")
+set(CMAKE_OBJDUMP "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}objdump.exe")
 set(CMAKE_SIZE "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}size.exe")
 set(CMAKE_AR "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}ar.exe")
 
 set(PROJECT_NAME "KeyBoard")
-set(TARGET_ARTIFACT "KeyBoard.elf")
+set(TARGET_ARTIFACT "${PROJECT_NAME}.elf")
+set(MAP_FILE "${PROJECT_NAME}.map")
+set(HEX_FILE "${PROJECT_NAME}.hex")
+set(LST_FILE "${PROJECT_NAME}.lst")
 
 set(CMAKE_C_OUTPUT_EXTENSION .o)
 set(CMAKE_CXX_OUTPUT_EXTENSION .o)
 
 project("${PROJECT_NAME}" LANGUAGES C ASM CXX)
 
-# Use relative path
 add_compile_options(-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=..)
 
 
-# 自动收集各目录下的C源文件，避免每次添加新文件都要修改CMakeLists.txt
 file(GLOB SRC_FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/User/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/src/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/src/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/src/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Debug/*.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/Core/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/User/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/src/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/src/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/src/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Debug/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core/*.c"
 )
 
-# 启动文件必须明确指定，不能使用通配符（只编译对应MCU型号的启动文件）
 list(APPEND SRC_FILES
-    "Startup/startup_ch32v20x_D6.S"
+        "Startup/startup_ch32v20x_D6.S"
 )
-set(CMAKE_C_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g -I\"${CMAKE_CURRENT_SOURCE_DIR}/Debug\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/Core\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/User\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/inc\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/inc\" -std=gnu11")
-set(CMAKE_CXX_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g -std=gnu++11 -fabi-version=0")
-set(CMAKE_ASM_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g -I\"${CMAKE_CURRENT_SOURCE_DIR}/Startup\" -x assembler-with-cpp")
+set(COMMON_RISCV_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g")
+
+set(COMMON_INCLUDE_DIRS " -I\"${CMAKE_CURRENT_SOURCE_DIR}/Debug\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/Core\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/User\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/inc\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/inc\"")
+
+set(CMAKE_C_FLAGS "${COMMON_RISCV_FLAGS}${COMMON_INCLUDE_DIRS} -std=gnu11")
+set(CMAKE_CXX_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu++11 -fabi-version=0")
+set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -I\"${CMAKE_CURRENT_SOURCE_DIR}/Startup\" -x assembler-with-cpp")
 
 add_executable("${TARGET_ARTIFACT}" ${SRC_FILES})
 
-set_target_properties("${TARGET_ARTIFACT}" PROPERTIES LINK_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g -T \"${CMAKE_CURRENT_SOURCE_DIR}/Ld/Link.ld\"   -nostartfiles -Xlinker --gc-sections -Xlinker --print-memory-usage -Wl,-Map,\"KeyBoard.map\" --specs=nano.specs --specs=nosys.specs -o \"KeyBoard.elf\" ")
+set_target_properties("${TARGET_ARTIFACT}" PROPERTIES LINK_FLAGS "${COMMON_RISCV_FLAGS} -T \"${CMAKE_CURRENT_SOURCE_DIR}/Ld/Link.ld\" -nostartfiles -Xlinker --gc-sections -Xlinker --print-memory-usage -Wl,-Map,\"${MAP_FILE}\" --specs=nano.specs --specs=nosys.specs -o \"${TARGET_ARTIFACT}\"")
 
-target_link_libraries("${TARGET_ARTIFACT}" )
+target_link_libraries("${TARGET_ARTIFACT}")
 
-add_custom_command(TARGET "${TARGET_ARTIFACT}" 
-POST_BUILD 
-COMMAND ${CMAKE_OBJCOPY} ARGS -O ihex  "KeyBoard.elf" "KeyBoard.hex"
-COMMAND ${CMAKE_OBJDUMP} ARGS  --all-headers --demangle --disassemble -M xw "KeyBoard.elf" > "KeyBoard.lst"
-COMMAND ${CMAKE_SIZE} ARGS  --format=berkeley "KeyBoard.elf"
+add_custom_command(TARGET "${TARGET_ARTIFACT}"
+        POST_BUILD
+        COMMAND ${CMAKE_OBJCOPY} ARGS -O ihex "${TARGET_ARTIFACT}" "${HEX_FILE}"
+        COMMAND ${CMAKE_OBJDUMP} ARGS --all-headers --demangle --disassemble -M xw "${TARGET_ARTIFACT}" > "${LST_FILE}"
+        COMMAND ${CMAKE_SIZE} ARGS --format=berkeley "${TARGET_ARTIFACT}"
 )
 

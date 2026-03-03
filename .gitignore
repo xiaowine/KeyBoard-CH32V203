@@ -1,4 +1,4 @@
 obj/
 .mrs/
-.idea/
+#.idea/
 cmake-build-*/
