@@ -1,111 +1,136 @@
 #include "keymap.h"
 #include "key.h"
 #include "usb_desc.h"
-#include <string.h>
-#include <stdbool.h>
+#include "utils.h"
 
-/* 分组数量（每组最多 6 键），是一个编译期常量 */
 #define KB_GROUPS CEIL_DIV(8 * HC165_COUNT, 6)
-u8 KB_Data_Pack[KB_GROUPS][DEF_ENDP_SIZE_KB] = {0};
-
-/* HID Usage IDs for letters A-Z (Keyboard a and A -> 0x04..0x1D) */
-static const u8 letter_usage[26] = {
-    0x04, /* A */
-    0x05, /* B */
-    0x06, /* C */
-    0x07, /* D */
-    0x08, /* E */
-    0x09, /* F */
-    0x0A, /* G */
-    0x0B, /* H */
-    0x0C, /* I */
-    0x0D, /* J */
-    0x0E, /* K */
-    0x0F, /* L */
-    0x10, /* M */
-    0x11, /* N */
-    0x12, /* O */
-    0x13, /* P */
-    0x14, /* Q */
-    0x15, /* R */
-    0x16, /* S */
-    0x17, /* T */
-    0x18, /* U */
-    0x19, /* V */
-    0x1A, /* W */
-    0x1B, /* X */
-    0x1C, /* Y */
-    0x1D /* Z */
-};
 
 /*
- * 将 24 个按键（HC165_COUNT * 8 位）打包为 4 个键盘报告。
- * 每个报告为 8 字节： [modifiers][reserved][k1..k6]
- * 我们把每个按键简单地映射为 usage id = key_index + 1（非零）。未按下的键使用 0 表示。
- * 如果某一分组内按下的键超过 6 个，多余的按键将被丢弃。
+ * keymap.c - 键盘按键映射与 HID 报告发送模块
+ *
+ * 概要：
+ * 将来自 HC165 串行并行转换器的原始扫描数据转换为标准 USB HID 键盘报告并发送。
+ *
+ * 处理流程：
+ *  1) 将 HC165 返回的字节合并为 24 位按键位掩码（按下位为 1）。
+ *  2) 根据 KEY_MAP 将被按下的物理键索引映射为 HID Usage ID（每键可映射多个码）。
+ *  3) 将所有要上报的码按每组最多 6 键进行分组，构造 HID 报告并通过对应端点发送。
+ *
+ * 要点：
+ *  - 报告格式为 DEF_ENDP_SIZE_KB 字节： [modifiers, reserved, k1..k6]
+ *  - 使用变化检测（prev_keys）避免重复发送；使用心跳（KB_HEARTBEAT_INTERVAL）定期重发以防同步丢失。
+ *  - 按需发送：仅发送包含实际按键的分组，USBD_ENDPx_DataUp 调用完成后底层负责清理状态。
+ *
  */
-static void pack_keys_to_report(const u8 snapshot[HC165_COUNT], u8 report[8], u8 group_index)
-{
-    /* 清空报告（modifiers + reserved + 6 个键槽） */
-    memset(report, 0, 8);
 
-    /*
-     * group_index 用于选择要填充的 6 键窗口：0..3（最多支持 24 个键）
-     */
-    u8 start_key = group_index * 6;
-    u8 filled = 0;
+// 记录上一次合并的按键位掩码，用于检测扫描间的变化
+static u32 prev_keys = 0;
 
-    for (u8 k = 0; k < 6; ++k)
-    {
-        u8 key_idx = start_key + k;
-        if (key_idx >= HC165_COUNT * 8)
-            break;
+// 可选心跳：每 N 次扫描重发一次完整快照（即使无变化），用于从主机/USB 丢包或重新枚举等边界情况恢复
+#define KB_HEARTBEAT_INTERVAL 500
+static u16 kb_heartbeat_counter = 0;
 
-        u8 byte_idx = key_idx >> 3;
-        u8 bit_idx = key_idx & 0x07;
-
-        /*
-         * 硬件为低电平有效（active-low）：0 表示按下
-         */
-        bool pressed = (((snapshot[byte_idx] >> bit_idx) & 0x01) == 0);
-        if (pressed)
-        {
-            /* 使用字母映射表（若 key_idx 在 0..25 范围内），否则回退到之前的简单映射 */
-            u8 usage = 0;
-            usage = letter_usage[key_idx];
-
-            report[2 + filled] = usage;
-            filled++;
-            if (filled >= 6)
-                break;
-        }
-    }
-}
+/**
+ * 核心发送逻辑：扫描 -> 收集 -> 分组 -> 发送
+ */
 
 void kb_send_snapshot(const u8 snapshot[HC165_COUNT])
 {
-    static u8 report[8];
+    // 1. 合并 24 位按键并取反（0变1表示按下）
+    // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
+    const u32 raw = (u32)snapshot[0] |
+            (u32)snapshot[1] << 8 |
+            (u32)snapshot[2] << 16;
+    // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
+    // 直接取反会导致变成全 1（误判为所有按键被按下）。
+    // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
+    const u32 keys = (raw == 0x000000) ? 0 : (~raw & 0x00FFFFFF);
 
-    /*
-     * 有 4 个键盘端点（EP1..EP4），每个端点携带一个 6-key 数组
-     */
-    for (int grp = 0; grp < KB_GROUPS; ++grp)
+    // 2. 变化检测：如果与上次位掩码相同，跳过处理以节省 CPU/USB
+    // 保存原始 keys 到 local 变量，后续位扫描会修改临时变量
+    u32 changed = keys ^ prev_keys;
+    if (changed == 0)
     {
-        pack_keys_to_report(snapshot, report, grp);
-
-        /*
-         * 通过对应的端点发送报告（ENDP1 + grp）。每个端点期望收到 DEF_ENDP_SIZE_KB 字节。
-         * 这里将 report 零扩展到端点最大包长，底层发送函数负责具体的 USB 分包。
-         */
-        u8 send_buf[DEF_ENDP_SIZE_KB];
-        memset(send_buf, 0, sizeof(send_buf));
-        memcpy(send_buf, report, sizeof(report));
-
-        /*
-         * ENDP1..ENDP4 映射为数值 1..4，传给 USBD_ENDPx_DataUp
-         */
-        u8 endp = (u8)(grp + 1);
-        /* 阻塞式尝试发送；当前忽略返回错误 */
-        USBD_ENDPx_DataUp(endp, send_buf, DEF_ENDP_SIZE_KB);
+        // 如果启用了心跳且达到间隔，则强制重发一次完整报告；否则直接返回
+        kb_heartbeat_counter++;
+        if (kb_heartbeat_counter < KB_HEARTBEAT_INTERVAL)
+        {
+            return; // 无变化且未到心跳周期，跳过后续收集与发送
+        }
+        // 心跳触发：重置计数并继续执行（将重新发送与上次相同的报告）
+        kb_heartbeat_counter = 0;
     }
+    else
+    {
+        // 有实际变化，清零心跳计数并继续处理
+        kb_heartbeat_counter = 0;
+    }
+
+    // 3. 收集所有按下的 HID Usage ID
+    static u8 all_codes[8 * HC165_COUNT * MAX_CODE] = {0}; // 理论最大支持 24个按键 * 每键多码
+    u8 total_codes = 0;
+    u8 modifier_bits = 0; // 合并所有按下键的修饰位（标准 HID modifier mask）
+
+    // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
+    u32 scan = keys;
+    while (scan)
+    {
+        const u32 idx = get_bit_index(scan);
+        if (idx < 24)
+        {
+            const KeyMapping* m = &KEY_MAP[idx];
+            // 累积修饰位（若该物理键带修饰）
+            modifier_bits |= m->modifiers;
+            for (u8 i = 0; i < m->count; i++)
+            {
+                if (total_codes < 48)
+                {
+                    all_codes[total_codes++] = m->codes[i];
+                }
+            }
+        }
+        scan &= scan - 1; // 清除最低位的 1
+    }
+
+    // 3. 将收集到的 codes 自动装箱到端点报告中
+    // 每个报告格式：[修饰键(modifiers), 保留(reserved), k1, k2, k3, k4, k5, k6]
+    static u8 send_buf[DEF_ENDP_SIZE_KB] = {0};
+
+    // 计算实际需要的分组数（至少1个，用于发送键位释放包）
+    const u8 needed_groups = total_codes > 0 ? (total_codes + 5) / 6 : 1;
+
+    for (u8 grp = 0; grp < needed_groups; grp++)
+    {
+        const u8 code_offset = grp * 6;
+        // 清空报文头和 6 个键位槽。对如此小且固定大小的报文使用显式赋值可避免编译器
+        // 在每次循环中生成对 memset 的调用
+        // 第 1 字节为合并的修饰位（所有分组共用）
+        send_buf[0] = modifier_bits; // 修饰键
+        for (u8 slot = 0; slot < 6; slot++)
+        {
+            send_buf[2 + slot] = 0;
+        }
+
+        // 填充 6 个键槽 (从 byte index 2 开始)
+        for (u8 slot = 0; slot < 6; slot++)
+        {
+            const u8 current_code_idx = code_offset + slot;
+
+            if (current_code_idx < total_codes)
+            {
+                send_buf[2 + slot] = all_codes[current_code_idx];
+            }
+            else
+
+            {
+                break; // 没有更多按下的键了
+            }
+        }
+
+        // 4. 发送对应端点
+        USBD_ENDPx_DataUp(grp + 1, send_buf, DEF_ENDP_SIZE_KB);
+    }
+
+    // 更新 prev_keys 为本次快照的真实键位（注意上面位扫描使用了副本 scan）
+    prev_keys = keys;
 }

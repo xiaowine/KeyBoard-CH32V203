@@ -1,6 +1,5 @@
-
-#ifndef APP_H
-#define APP_H
+#ifndef KEYBOARD_APP_H
+#define KEYBOARD_APP_H
 #include "debug.h"
 
 #define KEYBOARD_SCAN_FREQUENCY_HZ 3000U

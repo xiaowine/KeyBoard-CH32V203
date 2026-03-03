@@ -39,10 +39,6 @@ extern "C" {
 #define SDI_PRINT SDI_PR_CLOSE
 #endif
 
-#define INTF __attribute__((interrupt("WCH-Interrupt-fast")))
-#define RAM __attribute__((section(".ramfunc")))
-
-#define CEIL_DIV(x,y) (((x) + (y) - 1) / (y))
 
 void Delay_Init(void);
 void Delay_Us(uint32_t n);

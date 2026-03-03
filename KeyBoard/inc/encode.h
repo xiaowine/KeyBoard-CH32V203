@@ -1,5 +1,5 @@
-#ifndef __ENCODE_H
-#define __ENCODE_H
+#ifndef KEYBOARD_ENCODE_H
+#define KEYBOARD_ENCODE_H
 
 #include "app.h"
 #include "debug.h"

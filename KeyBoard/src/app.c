@@ -183,7 +183,7 @@ void app_run(void)
 
             next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
 
-            hid_comm_send((u8*)last_snapshot, HC165_COUNT);
+            // hid_comm_send(last_snapshot, HC165_COUNT);
             key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, ENABLE);
@@ -260,7 +260,6 @@ INTF void TIM4_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
     {
-        // hid_comm_send(last_snapshot, HC165_COUNT);
         kb_send_snapshot(last_snapshot);
         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
     }

@@ -1,5 +1,5 @@
-#ifndef __KEY_H
-#define __KEY_H
+#ifndef KEYBOARD_KEY_H
+#define KEYBOARD_KEY_H
 #include "debug.h"
 
 #define KEY_CE GPIO_Pin_3   // 连接到74HC165的CE 时钟使能
