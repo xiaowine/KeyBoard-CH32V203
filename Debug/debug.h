@@ -10,15 +10,15 @@
  * Attention: This software (modified or not) and binary are used for
  * microcontroller manufactured by Nanjing Qinheng Microelectronics.
  *******************************************************************************/
-#ifndef __DEBUG_H
-#define __DEBUG_H
+#ifndef DEBUG_H
+#define DEBUG_H
 
 #include "stdio.h"
 #include "ch32v20x.h"
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
+
 #endif
 
 /* UART Printf Definition */
@@ -42,11 +42,13 @@ extern "C"
 #define INTF __attribute__((interrupt("WCH-Interrupt-fast")))
 #define RAM __attribute__((section(".ramfunc")))
 
-  void Delay_Init(void);
-  void Delay_Us(uint32_t n);
-  void Delay_Ms(uint32_t n);
-  void USART_Printf_Init(uint32_t baudrate);
-  void SDI_Printf_Enable(void);
+#define CEIL_DIV(x,y) (((x) + (y) - 1) / (y))
+
+void Delay_Init(void);
+void Delay_Us(uint32_t n);
+void Delay_Ms(uint32_t n);
+void USART_Printf_Init(uint32_t baudrate);
+void SDI_Printf_Enable(void);
 
 #if (DEBUG)
 #define PRINT(format, ...) printf(format, ##__VA_ARGS__)

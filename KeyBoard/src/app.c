@@ -4,8 +4,9 @@
 #include "usb_desc.h"
 
 #include "hid_comm.h"
+#include "keymap.h"
 
-static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
+static volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
 static volatile u16 scan_tick_counter = 0;
 static u8 last_snapshot[HC165_COUNT];
 static u8 key_pressed_count = 0;
@@ -19,15 +20,11 @@ static volatile u8 active_sample_slot = 0;
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 static volatile u8 scan_timeout_ticks = 0;
 
-u8 KB_Data_Pack[DEF_ENDP_SIZE_KB] = {0x00}; // Keyboard IN Data Packet
 
-u8 USBD_ENDPx_DataUp(u8 endp, u8 *pbuf, u16 len);
-u8 USBD_SendCustomData(u8 *pbuf, u16 len);
-void my_hid_comm_callback(u8 *data, u16 len);
+void my_hid_comm_callback(u8* data, u16 len);
 
 void app_init(void)
 {
-
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     // IO 初始化
     {
@@ -55,37 +52,37 @@ void app_init(void)
     }
 
 #pragma region
-// 编码器初始化（TIM）
-// {
-//     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+    // 编码器初始化（TIM）
+    // {
+    //     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
-//  TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-//  TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-//  TIM_TimeBaseStructure.TIM_Prescaler = 0x0;
-//  TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
-//  TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-//  TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-//  TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+    //  TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
+    //  TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
+    //  TIM_TimeBaseStructure.TIM_Prescaler = 0x0;
+    //  TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
+    //  TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+    //  TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
+    //  TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
 
-//  TIM_EncoderInterfaceConfig(TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+    //  TIM_EncoderInterfaceConfig(TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
 
-//  TIM_ICInitTypeDef TIM_ICInitStructure;
-//  TIM_ICStructInit(&TIM_ICInitStructure);
-//  TIM_ICInitStructure.TIM_ICFilter = 10;
-//  TIM_ICInit(TIM2, &TIM_ICInitStructure);
+    //  TIM_ICInitTypeDef TIM_ICInitStructure;
+    //  TIM_ICStructInit(&TIM_ICInitStructure);
+    //  TIM_ICInitStructure.TIM_ICFilter = 10;
+    //  TIM_ICInit(TIM2, &TIM_ICInitStructure);
 
-//  NVIC_InitTypeDef NVIC_InitStructure;
-//  NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-//  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-//  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-//  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-//  NVIC_Init(&NVIC_InitStructure);
+    //  NVIC_InitTypeDef NVIC_InitStructure;
+    //  NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    //  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    //  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+    //  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
+    //  NVIC_Init(&NVIC_InitStructure);
 
-//  TIM_ClearFlag(TIM2, TIM_FLAG_Update);
-//  TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
-//  TIM_SetCounter(TIM2, (TIM_TimeBaseStructure.TIM_Period + 1) / 2);
-//  TIM_Cmd(TIM2, ENABLE);
-// }
+    //  TIM_ClearFlag(TIM2, TIM_FLAG_Update);
+    //  TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+    //  TIM_SetCounter(TIM2, (TIM_TimeBaseStructure.TIM_Period + 1) / 2);
+    //  TIM_Cmd(TIM2, ENABLE);
+    // }
 #pragma endregion
 
     /* 键盘模块初始化：配置 SPI + DMA 以读取 74HC165 */
@@ -93,9 +90,9 @@ void app_init(void)
 
     // TIM 初始化
     {
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+        // TIM3
 
-        TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
 
         // 设置定时器基准频率为 30kHz（用于分频得到 3kHz 扫描中断）
         const u16 tick_freq = 30000U;
@@ -111,9 +108,11 @@ void app_init(void)
         // 周期至少为 1
         if (period_ticks == 0)
             period_ticks = 1;
+        period_ticks -= 1;
 
-        TIM_TimeBaseInitStructure.TIM_Prescaler = (u16)prescaler;
-        TIM_TimeBaseInitStructure.TIM_Period = (u16)(period_ticks - 1);
+        TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
+        TIM_TimeBaseInitStructure.TIM_Prescaler = prescaler;
+        TIM_TimeBaseInitStructure.TIM_Period = period_ticks;
         TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
@@ -129,6 +128,27 @@ void app_init(void)
         NVIC_Init(&NVIC_InitStructure);
         TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
         TIM_Cmd(TIM3, ENABLE);
+
+        // TIM4
+
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
+
+        TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
+        TIM_TimeBaseInitStructure.TIM_Period = 999;
+        TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
+        TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
+        TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
+
+        TIM_TimeBaseInit(TIM4, &TIM_TimeBaseInitStructure);
+        TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+
+        NVIC_InitStructure.NVIC_IRQChannel = TIM4_IRQn;
+        NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
+        NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
+        NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+        NVIC_Init(&NVIC_InitStructure);
+        TIM_ITConfig(TIM4, TIM_IT_Update, ENABLE);
+        TIM_Cmd(TIM4, ENABLE);
     }
 
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
@@ -145,7 +165,7 @@ void app_init(void)
 void app_run(void)
 {
     hid_comm_process();
-    switch (key_state)
+    switch (key_scan_state)
     {
     case KEY_STATE_SCANNING:
         /* 检查 DMA 传输是否完成 */
@@ -163,14 +183,14 @@ void app_run(void)
 
             next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
 
-            hid_comm_send((u8 *)last_snapshot, HC165_COUNT);
-            key_state = KEY_STATE_IDLE;
+            hid_comm_send((u8*)last_snapshot, HC165_COUNT);
+            key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, ENABLE);
         }
         else if (scan_timeout_ticks >= KEY_SCAN_TIMEOUT_TICKS)
         {
-            key_state = KEY_STATE_IDLE;
+            key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, ENABLE);
             PRINT("Key scan timeout, recovery\r\n");
@@ -220,9 +240,9 @@ INTF void TIM3_IRQHandler(void)
         scan_tick_counter++;
 
         /* 如果当前空闲，启动新的扫描 */
-        if (key_state == KEY_STATE_IDLE)
+        if (key_scan_state == KEY_STATE_IDLE)
         {
-            key_state = KEY_STATE_SCANNING;
+            key_scan_state = KEY_STATE_SCANNING;
             active_sample_slot = next_sample_slot;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, DISABLE);
@@ -236,7 +256,17 @@ INTF void TIM3_IRQHandler(void)
     }
 }
 
-void my_hid_comm_callback(u8 *data, u16 len)
+INTF void TIM4_IRQHandler(void)
+{
+    if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
+    {
+        // hid_comm_send(last_snapshot, HC165_COUNT);
+        kb_send_snapshot(last_snapshot);
+        TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+    }
+}
+
+void my_hid_comm_callback(u8* data, u16 len)
 {
     PRINT("App: Received %d bytes from HID comm\r\n", len);
     // 这里可以添加对接收到的数据的处理逻辑
