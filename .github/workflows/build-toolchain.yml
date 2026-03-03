@@ -58,7 +58,14 @@ jobs:
           if [ -z "$tool_dir" ]; then
             echo "Could not find 'Toolchain/RISC-V Embedded GCC12' inside downloaded archive"; ls -R .; exit 1
           fi
-          abs=$(realpath "$tool_dir")
+          # Compute absolute path in a portable way. Prefer readlink -f, fall back to realpath or python3.
+          if command -v readlink >/dev/null 2>&1; then
+            abs=$(readlink -f "$tool_dir")
+          elif command -v realpath >/dev/null 2>&1; then
+            abs=$(realpath "$tool_dir")
+          else
+            abs=$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$tool_dir")
+          fi
           echo "TOOLCHAIN_FOLDER=$abs" >> $GITHUB_ENV
           echo "Toolchain folder set to: $abs"
 
@@ -70,9 +77,9 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           set -euo pipefail
-          echo "Installing build dependencies (cmake, build-essential, jq, xz-utils, tar, realpath)..."
+          echo "Installing build dependencies (cmake, build-essential, jq, xz-utils, tar)..."
           sudo apt-get update -y
-          sudo apt-get install -y --no-install-recommends cmake build-essential jq xz-utils tar realpath pkg-config
+          sudo apt-get install -y --no-install-recommends cmake build-essential jq xz-utils tar pkg-config
           cmake --version
 
       - name: Add toolchain bin to PATH
