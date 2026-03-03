@@ -2,7 +2,6 @@
 #include "key.h"
 #include "usb_lib.h"
 #include "usb_desc.h"
-#include <string.h>
 
 #include "hid_comm.h"
 

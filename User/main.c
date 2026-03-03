@@ -23,9 +23,10 @@ int main(void)
 
 #if (DEBUG)
     USART_Printf_Init(2000000);
-    PRINT("SystemClk:%d\r\n", SystemCoreClock);
+    PRINT("SystemClk:%lu\r\n", SystemCoreClock);
 #endif
     app_init();
+    // ReSharper disable once CppDFAEndlessLoop
     while (1)
     {
         app_run();
