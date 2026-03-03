@@ -7,15 +7,14 @@
  *************************************************************************/
 #include "hid_comm.h"
 #include "usb_lib.h"
+#include "usb_endp.h"
 #include "debug.h"
+#include "utils.h"
 #include <string.h>
 
 /* External functions from usb_endp.c */
-extern u8 USBD_SendCustomData(u8* pbuf, u16 len);
-extern u16 USBD_GetCustomData(u8* pbuf, u16 max_len);
-
 /* Static variables */
-static u8 rx_buffer[HID_COMM_DATA_SIZE] = {0};
+static uint8_t rx_buffer[HID_COMM_DATA_SIZE] = {0};
 static hid_comm_callback_t data_received_callback = NULL;
 
 /*********************************************************************
@@ -28,7 +27,7 @@ static hid_comm_callback_t data_received_callback = NULL;
  *
  * @return  Status (0=success, 1=error)
  */
-u8 hid_comm_send(u8* data, u16 len)
+uint8_t hid_comm_send(uint8_t *data, uint16_t len)
 {
     // Send via USB endpoint (Report ID will be automatically added)
     return USBD_SendCustomData(data, len);
@@ -43,9 +42,9 @@ u8 hid_comm_send(u8* data, u16 len)
  */
 void hid_comm_process(void)
 {
-    u16 received_len = USBD_GetCustomData(rx_buffer, sizeof(rx_buffer));
-    u8* data_ptr = rx_buffer;
-    u16 data_len = received_len;
+    uint16_t received_len = USBD_GetCustomData(rx_buffer, sizeof(rx_buffer));
+    uint8_t *data_ptr = rx_buffer;
+    uint16_t data_len = received_len;
 
     if (received_len == 0)
         return;

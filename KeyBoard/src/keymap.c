@@ -1,6 +1,7 @@
 #include "keymap.h"
 #include "key.h"
 #include "usb_desc.h"
+#include "usb_endp.h"
 #include "utils.h"
 
 #define KB_GROUPS CEIL_DIV(8 * HC165_COUNT, 6)
@@ -24,31 +25,31 @@
  */
 
 // 记录上一次合并的按键位掩码，用于检测扫描间的变化
-static u32 prev_keys = 0;
+static uint32_t prev_keys = 0;
 
 // 可选心跳：每 N 次扫描重发一次完整快照（即使无变化），用于从主机/USB 丢包或重新枚举等边界情况恢复
 #define KB_HEARTBEAT_INTERVAL 500
-static u16 kb_heartbeat_counter = 0;
+static uint16_t kb_heartbeat_counter = 0;
 
 /**
  * 核心发送逻辑：扫描 -> 收集 -> 分组 -> 发送
  */
 
-void kb_send_snapshot(const u8 snapshot[HC165_COUNT])
+void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
 {
     // 1. 合并 24 位按键并取反（0变1表示按下）
     // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
-    const u32 raw = (u32)snapshot[0] |
-            (u32)snapshot[1] << 8 |
-            (u32)snapshot[2] << 16;
+    const uint32_t raw = (uint32_t)snapshot[0] |
+                         (uint32_t)snapshot[1] << 8 |
+                         (uint32_t)snapshot[2] << 16;
     // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
     // 直接取反会导致变成全 1（误判为所有按键被按下）。
     // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
-    const u32 keys = (raw == 0x000000) ? 0 : (~raw & 0x00FFFFFF);
+    const uint32_t keys = (raw == 0x000000) ? 0 : (~raw & 0x00FFFFFF);
 
     // 2. 变化检测：如果与上次位掩码相同，跳过处理以节省 CPU/USB
     // 保存原始 keys 到 local 变量，后续位扫描会修改临时变量
-    u32 changed = keys ^ prev_keys;
+    uint32_t changed = keys ^ prev_keys;
     if (changed == 0)
     {
         // 如果启用了心跳且达到间隔，则强制重发一次完整报告；否则直接返回
@@ -67,21 +68,21 @@ void kb_send_snapshot(const u8 snapshot[HC165_COUNT])
     }
 
     // 3. 收集所有按下的 HID Usage ID
-    static u8 all_codes[8 * HC165_COUNT * MAX_CODE] = {0}; // 理论最大支持 24个按键 * 每键多码
-    u8 total_codes = 0;
-    u8 modifier_bits = 0; // 合并所有按下键的修饰位（标准 HID modifier mask）
+    static uint8_t all_codes[8 * HC165_COUNT * MAX_CODE] = {0}; // 理论最大支持 24个按键 * 每键多码
+    uint8_t total_codes = 0;
+    uint8_t modifier_bits = 0; // 合并所有按下键的修饰位（标准 HID modifier mask）
 
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
-    u32 scan = keys;
+    uint32_t scan = keys;
     while (scan)
     {
-        const u32 idx = get_bit_index(scan);
+        const uint32_t idx = get_bit_index(scan);
         if (idx < 24)
         {
-            const KeyMapping* m = &KEY_MAP[idx];
+            const KeyMapping *m = &KEY_MAP[idx];
             // 累积修饰位（若该物理键带修饰）
             modifier_bits |= m->modifiers;
-            for (u8 i = 0; i < m->count; i++)
+            for (uint8_t i = 0; i < m->count; i++)
             {
                 if (total_codes < 48)
                 {
@@ -94,27 +95,27 @@ void kb_send_snapshot(const u8 snapshot[HC165_COUNT])
 
     // 3. 将收集到的 codes 自动装箱到端点报告中
     // 每个报告格式：[修饰键(modifiers), 保留(reserved), k1, k2, k3, k4, k5, k6]
-    static u8 send_buf[DEF_ENDP_SIZE_KB] = {0};
+    static uint8_t send_buf[DEF_ENDP_SIZE_KB] = {0};
 
     // 计算实际需要的分组数（至少1个，用于发送键位释放包）
-    const u8 needed_groups = total_codes > 0 ? (total_codes + 5) / 6 : 1;
+    const uint8_t needed_groups = total_codes > 0 ? (total_codes + 5) / 6 : 1;
 
-    for (u8 grp = 0; grp < needed_groups; grp++)
+    for (uint8_t grp = 0; grp < needed_groups; grp++)
     {
-        const u8 code_offset = grp * 6;
+        const uint8_t code_offset = grp * 6;
         // 清空报文头和 6 个键位槽。对如此小且固定大小的报文使用显式赋值可避免编译器
         // 在每次循环中生成对 memset 的调用
         // 第 1 字节为合并的修饰位（所有分组共用）
         send_buf[0] = modifier_bits; // 修饰键
-        for (u8 slot = 0; slot < 6; slot++)
+        for (uint8_t slot = 0; slot < 6; slot++)
         {
             send_buf[2 + slot] = 0;
         }
 
         // 填充 6 个键槽 (从 byte index 2 开始)
-        for (u8 slot = 0; slot < 6; slot++)
+        for (uint8_t slot = 0; slot < 6; slot++)
         {
-            const u8 current_code_idx = code_offset + slot;
+            const uint8_t current_code_idx = code_offset + slot;
 
             if (current_code_idx < total_codes)
             {

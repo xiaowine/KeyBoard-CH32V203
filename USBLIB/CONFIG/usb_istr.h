@@ -3,35 +3,20 @@
  * Author             : WCH
  * Version            : V1.0.0
  * Date               : 2021/08/08
- * Description        : This file includes the peripherals header files in the 
+ * Description        : This file includes the peripherals header files in the
  *                      user application.
-*********************************************************************************
-* Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
-* Attention: This software (modified or not) and binary are used for 
-* microcontroller manufactured by Nanjing Qinheng Microelectronics.
-*******************************************************************************/ 
+ *********************************************************************************
+ * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
+ * Attention: This software (modified or not) and binary are used for
+ * microcontroller manufactured by Nanjing Qinheng Microelectronics.
+ *******************************************************************************/
 #ifndef __USB_ISTR_H
 #define __USB_ISTR_H
 
-#include "usb_conf.h"
-
-
 void USB_Istr(void);
-void EP1_IN_Callback(void);
-void EP2_IN_Callback(void);
-void EP3_IN_Callback(void);
-void EP4_IN_Callback(void);
-void EP5_IN_Callback(void);
-void EP6_IN_Callback(void);
-void EP7_IN_Callback(void);
-
-void EP1_OUT_Callback(void);
-void EP2_OUT_Callback(void);
-void EP3_OUT_Callback(void);
-void EP4_OUT_Callback(void);
-void EP5_OUT_Callback(void);
-void EP6_OUT_Callback(void);
-void EP7_OUT_Callback(void);
+/* Unified endpoint handlers (take endpoint number as parameter) */
+void USBD_EP_IN_Handler(uint8_t endp);
+void USBD_EP_OUT_Handler(uint8_t endp);
 
 #ifdef CTR_CALLBACK
 void CTR_Callback(void);
@@ -65,13 +50,4 @@ void SOF_Callback(void);
 void ESOF_Callback(void);
 #endif
 
-
 #endif /*__USB_ISTR_H*/
-
-
-
-
-
-
-
-

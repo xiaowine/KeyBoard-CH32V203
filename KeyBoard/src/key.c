@@ -5,14 +5,14 @@
 #include "utils.h"
 
 /* 模块内部缓冲区与标志 */
-static u8 spi_dma_rx_buf[HC165_COUNT];
-static u8 hc165_snapshot[HC165_COUNT];
-static volatile u8 dma_transfer_complete_flag = 0;
+static uint8_t spi_dma_rx_buf[HC165_COUNT];
+static uint8_t hc165_snapshot[HC165_COUNT];
+static volatile uint8_t dma_transfer_complete_flag = 0;
 
 /* 3kHz 采样与过滤管理 */
-static u8 key_sample_buffer[KEY_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
-static u8 key_filtered_state[HC165_COUNT]; /* 1ms 多数投票结果 */
-static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS]; /* 每键状态跟踪 */
+static uint8_t key_sample_buffer[KEY_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
+static uint8_t key_filtered_state[HC165_COUNT];                   /* 1ms 多数投票结果 */
+static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS];         /* 每键状态跟踪 */
 
 void key_init(void)
 {
@@ -35,8 +35,8 @@ void key_init(void)
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
     DMA_InitTypeDef DMA_InitStructure = {0};
-    DMA_InitStructure.DMA_PeripheralBaseAddr = (u32)&SPI1->DATAR;
-    DMA_InitStructure.DMA_MemoryBaseAddr = (u32)spi_dma_rx_buf;
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&SPI1->DATAR;
+    DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)spi_dma_rx_buf;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
     DMA_InitStructure.DMA_BufferSize = HC165_COUNT;
     DMA_InitStructure.DMA_PeripheralInc = DMA_PeripheralInc_Disable;
@@ -48,8 +48,8 @@ void key_init(void)
     DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
     DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 
-    static u8 dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
-    DMA_InitStructure.DMA_MemoryBaseAddr = (u32)dummy_tx;
+    static uint8_t dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
+    DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)dummy_tx;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
     DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable; /* 发送固定值 */
     DMA_Init(DMA1_Channel3, &DMA_InitStructure);
@@ -69,12 +69,12 @@ void key_init(void)
     SPI_Cmd(SPI1, ENABLE);
 }
 
-u8 key_transfer_complete(void)
+uint8_t key_transfer_complete(void)
 {
     return dma_transfer_complete_flag;
 }
 
-void key_copy_snapshot(u8 dest[HC165_COUNT])
+void key_copy_snapshot(uint8_t dest[HC165_COUNT])
 {
     memcpy(dest, hc165_snapshot, HC165_COUNT);
 }
@@ -91,7 +91,7 @@ void key_start_scan(void)
     DMA_SetCurrDataCounter(DMA1_Channel2, HC165_COUNT);
     DMA_SetCurrDataCounter(DMA1_Channel3, HC165_COUNT);
 
-    // static u8 data[HC165_COUNT];
+    // static uint8_t data[HC165_COUNT];
     /*
      * 74HC165 时序：
      * - 保持 CE 为高（时钟禁止）同时通过 PL (/CS) 加载并行输入。
@@ -100,20 +100,20 @@ void key_start_scan(void)
      */
 
     KEY_DISABLE_CLOCK(); /* 禁止时钟 */
-    KEY_LOAD_PL(); /* 加载并行输入 */
-    KEY_ENABLE_CLOCK(); /* 启用时钟 */
+    KEY_LOAD_PL();       /* 加载并行输入 */
+    KEY_ENABLE_CLOCK();  /* 启用时钟 */
 
     //  开启 DMA，开始传输
     DMA_Cmd(DMA1_Channel2, ENABLE);
     DMA_Cmd(DMA1_Channel3, ENABLE);
 }
 
-void output_data(const u8 rx_buf[HC165_COUNT])
+void output_data(const uint8_t rx_buf[HC165_COUNT])
 {
     char buffer[256];
     int offset = 0;
 
-    for (u8 i = 0; i < HC165_COUNT; ++i)
+    for (uint8_t i = 0; i < HC165_COUNT; ++i)
     {
         offset += snprintf(buffer + offset, sizeof(buffer) - offset, "line%u: ", (unsigned)i);
         if (offset >= (int)sizeof(buffer) - 10)
@@ -135,7 +135,7 @@ void output_data(const u8 rx_buf[HC165_COUNT])
  * @param slot 采样槽位 (0~2)
  * @param sample 待存采样数据
  */
-void key_store_sample(u8 slot, const u8 sample[HC165_COUNT])
+void key_store_sample(uint8_t slot, const uint8_t sample[HC165_COUNT])
 {
     if (slot >= KEY_SAMPLE_WINDOW)
         return;
@@ -152,25 +152,25 @@ void key_do_filter_and_update(void)
      * 对三个采样 a, b, c，结果为 (a & b) | (b & c) | (a & c)
      * 这表示至少 2 个采样为 1 的位位置
      */
-    for (u8 byte_idx = 0; byte_idx < HC165_COUNT; byte_idx++)
+    for (uint8_t byte_idx = 0; byte_idx < HC165_COUNT; byte_idx++)
     {
-        u8 sample0 = key_sample_buffer[0][byte_idx];
-        u8 sample1 = key_sample_buffer[1][byte_idx];
-        u8 sample2 = key_sample_buffer[2][byte_idx];
+        uint8_t sample0 = key_sample_buffer[0][byte_idx];
+        uint8_t sample1 = key_sample_buffer[1][byte_idx];
+        uint8_t sample2 = key_sample_buffer[2][byte_idx];
 
         /* 布尔代数方式：(a & b) | (b & c) | (a & c) 给出都至少 2 个为 1 的位 */
-        u8 filtered = (sample0 & sample1) | (sample1 & sample2) | (sample0 & sample2);
+        uint8_t filtered = (sample0 & sample1) | (sample1 & sample2) | (sample0 & sample2);
         key_filtered_state[byte_idx] = filtered;
     }
 
     /* 更新每键的四态状态机（连续 2 次确认转移） */
-    for (u8 key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
+    for (uint8_t key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
     {
-        u8 byte_idx = key_idx >> 3; /* key_idx / 8 */
-        u8 bit_idx = key_idx & 0x07; /* key_idx % 8 */
-        u8 key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
+        uint8_t byte_idx = key_idx >> 3;  /* key_idx / 8 */
+        uint8_t bit_idx = key_idx & 0x07; /* key_idx % 8 */
+        uint8_t key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
 
-        key_debounce_t* state = &key_debounce_state[key_idx];
+        key_debounce_t *state = &key_debounce_state[key_idx];
 
         switch (state->state)
         {
@@ -219,7 +219,7 @@ void key_do_filter_and_update(void)
  * @param key_idx 按键索引 (0-23)
  * @return 按键状态 (KEY_DEBOUNCE_IDLE 或 KEY_DEBOUNCE_PRESSED)
  */
-key_debounce_state_e key_get_debounce_state(u8 key_idx)
+key_debounce_state_e key_get_debounce_state(uint8_t key_idx)
 {
     if (key_idx >= KEY_TOTAL_KEYS)
         return KEY_DEBOUNCE_IDLE;

@@ -13,7 +13,4 @@ typedef enum
 
 void app_init(void);
 void app_run(void);
-
-u8 USBD_ENDPx_DataUp(u8 endp, u8* pbuf, u16 len);
-u8 USBD_SendCustomData(u8* pbuf, u16 len);
 #endif

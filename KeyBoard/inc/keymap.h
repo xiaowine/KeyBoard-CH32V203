@@ -9,9 +9,9 @@
 // 每个物理按键对应的映射，最多支持 3 个同时触发的操作码（可调）
 typedef struct
 {
-    u8 count;
-    u8 modifiers; // HID 8-bit modifier mask (standard USB HID modifier bits)
-    u8 codes[MAX_CODE];
+    uint8_t count;
+    uint8_t modifiers; // HID 8-bit modifier mask (standard USB HID modifier bits)
+    uint8_t codes[MAX_CODE];
 } KeyMapping;
 // 标准 USB HID modifier 位定义
 #define MOD_LCTRL 0x01
@@ -50,6 +50,6 @@ AL4 static const KeyMapping KEY_MAP[24] = {
     [23] = {1, 0x00, {0x1B}},
 };
 
-void kb_send_snapshot(const u8 snapshot[HC165_COUNT]);
+void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 
 #endif

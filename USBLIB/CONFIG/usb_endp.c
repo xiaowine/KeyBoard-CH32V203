@@ -17,8 +17,8 @@
 #include "usb_pwr.h"
 #include <string.h>
 
-uint8_t USBD_Endp1_Busy, USBD_Endp2_Busy, USBD_Endp3_Busy, USBD_Endp4_Busy, USBD_Endp5_Busy;
-u16 USB_Rx_Cnt = 0;
+volatile uint8_t USBD_EndpBusy[EP_NUM + 1]; /* index 0 unused, use 1..EP_NUM */
+uint16_t USB_Rx_Cnt = 0;
 volatile uint8_t USBD_HId_Comm_Data_Buffer[DEF_ENDP_SIZE_CUSTOM] = {0}; // HID communication data buffer
 
 /*********************************************************************
@@ -28,58 +28,15 @@ volatile uint8_t USBD_HId_Comm_Data_Buffer[DEF_ENDP_SIZE_CUSTOM] = {0}; // HID c
  *
  * @return  none
  */
-void EP1_IN_Callback(void)
+void USBD_EP_IN_Handler(uint8_t endp)
 {
-	USBD_Endp1_Busy = 0;
+	if (endp >= 1 && endp <= EP_NUM)
+	{
+		USBD_EndpBusy[endp] = 0;
+	}
 }
 
-/*********************************************************************
- * @fn      EP2_IN_Callback
- *
- * @brief  Endpoint 2 IN.
- *
- * @return  none
- */
-void EP2_IN_Callback(void)
-{
-	USBD_Endp2_Busy = 0;
-}
-
-/*********************************************************************
- * @fn      EP3_IN_Callback
- *
- * @brief  Endpoint 3 IN.
- *
- * @return  none
- */
-void EP3_IN_Callback(void)
-{
-	USBD_Endp3_Busy = 0;
-}
-
-/*********************************************************************
- * @fn      EP4_IN_Callback
- *
- * @brief  Endpoint 4 IN.
- *
- * @return  none
- */
-void EP4_IN_Callback(void)
-{
-	USBD_Endp4_Busy = 0;
-}
-
-/*********************************************************************
- * @fn      EP5_IN_Callback
- *
- * @brief  Endpoint 5 IN.
- *
- * @return  none
- */
-void EP5_IN_Callback(void)
-{
-	USBD_Endp5_Busy = 0;
-}
+/* Unified IN handler `USBD_EP_IN_Handler` is used directly from interrupts. */
 
 /*********************************************************************
  * @fn      EP5_OUT_Callback
@@ -88,14 +45,20 @@ void EP5_IN_Callback(void)
  *
  * @return  none
  */
-void EP5_OUT_Callback(void)
+/* Common OUT handler that dispatches based on endpoint number */
+void USBD_EP_OUT_Handler(uint8_t endp)
 {
-	/* Direct read from PMA to application buffer, no intermediate copy */
-	USB_Rx_Cnt = USB_SIL_Read(EP5_OUT, (uint8_t *)USBD_HId_Comm_Data_Buffer);
+	if (endp == ENDP5)
+	{
+		/* Direct read from PMA to application buffer, no intermediate copy */
+		USB_Rx_Cnt = USB_SIL_Read(EP5_OUT, (uint8_t *)USBD_HId_Comm_Data_Buffer);
 
-	/* Re-enable RX for next reception */
-	SetEPRxValid(ENDP5);
+		/* Re-enable RX for next reception */
+		SetEPRxValid(ENDP5);
+	}
 }
+
+/* EP OUT callbacks are handled by USBD_EP_OUT_Handler directly. */
 
 /*********************************************************************
  * @fn      USBD_ENDPx_DataUp
@@ -110,60 +73,19 @@ void EP5_OUT_Callback(void)
  */
 uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len)
 {
-	if (endp == ENDP1)
-	{
-		if (USBD_Endp1_Busy)
-		{
-			return USB_ERROR;
-		}
-		USB_SIL_Write(EP1_IN, pbuf, len);
-		USBD_Endp1_Busy = 1;
-		SetEPTxStatus(ENDP1, EP_TX_VALID);
-	}
-	else if (endp == ENDP2)
-	{
-		if (USBD_Endp2_Busy)
-		{
-			return USB_ERROR;
-		}
-		USB_SIL_Write(EP2_IN, pbuf, len);
-		USBD_Endp2_Busy = 1;
-		SetEPTxStatus(ENDP2, EP_TX_VALID);
-	}
-	else if (endp == ENDP3)
-	{
-		if (USBD_Endp3_Busy)
-		{
-			return USB_ERROR;
-		}
-		USB_SIL_Write(EP3_IN, pbuf, len);
-		USBD_Endp3_Busy = 1;
-		SetEPTxStatus(ENDP3, EP_TX_VALID);
-	}
-	else if (endp == ENDP4)
-	{
-		if (USBD_Endp4_Busy)
-		{
-			return USB_ERROR;
-		}
-		USB_SIL_Write(EP4_IN, pbuf, len);
-		USBD_Endp4_Busy = 1;
-		SetEPTxStatus(ENDP4, EP_TX_VALID);
-	}
-	else if (endp == ENDP5)
-	{
-		if (USBD_Endp5_Busy)
-		{
-			return USB_ERROR;
-		}
-		USB_SIL_Write(EP5_IN, pbuf, len);
-		USBD_Endp5_Busy = 1;
-		SetEPTxStatus(ENDP5, EP_TX_VALID);
-	}
-	else
+	if (endp < 1 || endp > EP_NUM)
 	{
 		return USB_ERROR;
 	}
+
+	if (USBD_EndpBusy[endp])
+	{
+		return USB_ERROR;
+	}
+
+	USB_SIL_Write(endp, pbuf, len);
+	USBD_EndpBusy[endp] = 1;
+	SetEPTxStatus(endp, EP_TX_VALID);
 	return USB_SUCCESS;
 }
 
@@ -179,7 +101,7 @@ uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len)
  */
 uint16_t USBD_GetCustomData(uint8_t *pbuf, uint16_t max_len)
 {
-	uint16_t copy_len = (USB_Rx_Cnt > max_len) ? max_len : USB_Rx_Cnt;
+	const uint16_t copy_len = (USB_Rx_Cnt > max_len) ? max_len : USB_Rx_Cnt;
 	if (copy_len > 0)
 	{
 		memcpy(pbuf, (uint8_t *)USBD_HId_Comm_Data_Buffer, copy_len);

@@ -18,7 +18,7 @@
 
 uint8_t Request = 0;
 
-extern uint8_t USBD_Endp1_Busy, USBD_Endp2_Busy, USBD_Endp3_Busy, USBD_Endp4_Busy, USBD_Endp5_Busy;
+extern volatile uint8_t USBD_EndpBusy[];
 volatile uint8_t HIDReportOut[8] = {0};
 volatile uint8_t USBD_Sleep_Status = 0x00;
 volatile uint8_t HID_Idle_Value[5] = {0};
@@ -249,11 +249,13 @@ void USBD_Reset(void)
 
   SetDeviceAddress(0);
 
-  USBD_Endp1_Busy = 0;
-  USBD_Endp2_Busy = 0;
-  USBD_Endp3_Busy = 0;
-  USBD_Endp4_Busy = 0;
-  USBD_Endp5_Busy = 0;
+  {
+    uint8_t i;
+    for (i = 1; i <= EP_NUM; i++)
+    {
+      USBD_EndpBusy[i] = 0;
+    }
+  }
 
   bDeviceState = ATTACHED;
 }

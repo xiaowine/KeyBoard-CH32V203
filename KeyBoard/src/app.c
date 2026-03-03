@@ -7,21 +7,20 @@
 #include "keymap.h"
 
 static volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
-static volatile u16 scan_tick_counter = 0;
-static u8 last_snapshot[HC165_COUNT];
-static u8 key_pressed_count = 0;
-static u8 debug = 0;
+static volatile uint16_t scan_tick_counter = 0;
+static uint8_t last_snapshot[HC165_COUNT];
+static uint8_t key_pressed_count = 0;
+static uint8_t debug = 0;
 
 /* 子采样槽位管理（0 -> 1 -> 2 -> 0） */
-static u8 next_sample_slot = 0;
-static volatile u8 active_sample_slot = 0;
+static uint8_t next_sample_slot = 0;
+static volatile uint8_t active_sample_slot = 0;
 
 /* 扫描超时保护（单位：TIM3 update tick） */
 #define KEY_SCAN_TIMEOUT_TICKS 6U
-static volatile u8 scan_timeout_ticks = 0;
+static volatile uint8_t scan_timeout_ticks = 0;
 
-
-void my_hid_comm_callback(u8* data, u16 len);
+void my_hid_comm_callback(uint8_t *data, uint16_t len);
 
 void app_init(void)
 {
@@ -95,16 +94,16 @@ void app_init(void)
         RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
 
         // 设置定时器基准频率为 30kHz（用于分频得到 3kHz 扫描中断）
-        const u16 tick_freq = 30000U;
+        const uint16_t tick_freq = 30000U;
         // 计算预分频值
-        u16 prescaler = SystemCoreClock / tick_freq;
+        uint16_t prescaler = SystemCoreClock / tick_freq;
         // 预分频值至少为 1
         if (prescaler == 0)
             prescaler = 1;
         prescaler -= 1;
 
         // 计算周期：period_ticks = tick_freq / 3000 = 10
-        u16 period_ticks = tick_freq / KEYBOARD_SCAN_FREQUENCY_HZ;
+        uint16_t period_ticks = tick_freq / KEYBOARD_SCAN_FREQUENCY_HZ;
         // 周期至少为 1
         if (period_ticks == 0)
             period_ticks = 1;
@@ -228,8 +227,8 @@ void app_run(void)
             }
             key_pressed_count = 0;
         }
-        // // output_data((const u8 *)last_snapshot);
-        // hid_comm_send((u8 *)last_snapshot, HC165_COUNT);
+        // // output_data((const uint8_t *)last_snapshot);
+        // hid_comm_send((uint8_t *)last_snapshot, HC165_COUNT);
     }
 }
 
@@ -265,11 +264,11 @@ INTF void TIM4_IRQHandler(void)
     }
 }
 
-void my_hid_comm_callback(u8* data, u16 len)
+void my_hid_comm_callback(uint8_t *data, uint16_t len)
 {
     PRINT("App: Received %d bytes from HID comm\r\n", len);
     // 这里可以添加对接收到的数据的处理逻辑
-    for (u16 i = 0; i < len; i++)
+    for (uint16_t i = 0; i < len; i++)
     {
         PRINT("  Byte %d: 0x%02X\r\n", i, data[i]);
     }

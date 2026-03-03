@@ -4,108 +4,108 @@
  * Version            : V1.0.0
  * Date               : 2021/06/06
  * Description        : This file provides all the ADC firmware functions.
-*********************************************************************************
-* Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
-* Attention: This software (modified or not) and binary are used for 
-* microcontroller manufactured by Nanjing Qinheng Microelectronics.
-*******************************************************************************/
+ *********************************************************************************
+ * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
+ * Attention: This software (modified or not) and binary are used for
+ * microcontroller manufactured by Nanjing Qinheng Microelectronics.
+ *******************************************************************************/
 #include "ch32v20x_adc.h"
 #include "ch32v20x_rcc.h"
 
 /* ADC DISCNUM mask */
-#define CTLR1_DISCNUM_Reset              ((uint32_t)0xFFFF1FFF)
+#define CTLR1_DISCNUM_Reset ((uint32_t)0xFFFF1FFF)
 
 /* ADC DISCEN mask */
-#define CTLR1_DISCEN_Set                 ((uint32_t)0x00000800)
-#define CTLR1_DISCEN_Reset               ((uint32_t)0xFFFFF7FF)
+#define CTLR1_DISCEN_Set ((uint32_t)0x00000800)
+#define CTLR1_DISCEN_Reset ((uint32_t)0xFFFFF7FF)
 
 /* ADC JAUTO mask */
-#define CTLR1_JAUTO_Set                  ((uint32_t)0x00000400)
-#define CTLR1_JAUTO_Reset                ((uint32_t)0xFFFFFBFF)
+#define CTLR1_JAUTO_Set ((uint32_t)0x00000400)
+#define CTLR1_JAUTO_Reset ((uint32_t)0xFFFFFBFF)
 
 /* ADC JDISCEN mask */
-#define CTLR1_JDISCEN_Set                ((uint32_t)0x00001000)
-#define CTLR1_JDISCEN_Reset              ((uint32_t)0xFFFFEFFF)
+#define CTLR1_JDISCEN_Set ((uint32_t)0x00001000)
+#define CTLR1_JDISCEN_Reset ((uint32_t)0xFFFFEFFF)
 
 /* ADC AWDCH mask */
-#define CTLR1_AWDCH_Reset                ((uint32_t)0xFFFFFFE0)
+#define CTLR1_AWDCH_Reset ((uint32_t)0xFFFFFFE0)
 
 /* ADC Analog watchdog enable mode mask */
-#define CTLR1_AWDMode_Reset              ((uint32_t)0xFF3FFDFF)
+#define CTLR1_AWDMode_Reset ((uint32_t)0xFF3FFDFF)
 
 /* CTLR1 register Mask */
-#define CTLR1_CLEAR_Mask                 ((uint32_t)0xE0F0FEFF)
+#define CTLR1_CLEAR_Mask ((uint32_t)0xE0F0FEFF)
 
 /* ADC ADON mask */
-#define CTLR2_ADON_Set                   ((uint32_t)0x00000001)
-#define CTLR2_ADON_Reset                 ((uint32_t)0xFFFFFFFE)
+#define CTLR2_ADON_Set ((uint32_t)0x00000001)
+#define CTLR2_ADON_Reset ((uint32_t)0xFFFFFFFE)
 
 /* ADC DMA mask */
-#define CTLR2_DMA_Set                    ((uint32_t)0x00000100)
-#define CTLR2_DMA_Reset                  ((uint32_t)0xFFFFFEFF)
+#define CTLR2_DMA_Set ((uint32_t)0x00000100)
+#define CTLR2_DMA_Reset ((uint32_t)0xFFFFFEFF)
 
 /* ADC RSTCAL mask */
-#define CTLR2_RSTCAL_Set                 ((uint32_t)0x00000008)
+#define CTLR2_RSTCAL_Set ((uint32_t)0x00000008)
 
 /* ADC CAL mask */
-#define CTLR2_CAL_Set                    ((uint32_t)0x00000004)
+#define CTLR2_CAL_Set ((uint32_t)0x00000004)
 
 /* ADC SWSTART mask */
-#define CTLR2_SWSTART_Set                ((uint32_t)0x00400000)
+#define CTLR2_SWSTART_Set ((uint32_t)0x00400000)
 
 /* ADC EXTTRIG mask */
-#define CTLR2_EXTTRIG_Set                ((uint32_t)0x00100000)
-#define CTLR2_EXTTRIG_Reset              ((uint32_t)0xFFEFFFFF)
+#define CTLR2_EXTTRIG_Set ((uint32_t)0x00100000)
+#define CTLR2_EXTTRIG_Reset ((uint32_t)0xFFEFFFFF)
 
 /* ADC Software start mask */
-#define CTLR2_EXTTRIG_SWSTART_Set        ((uint32_t)0x00500000)
-#define CTLR2_EXTTRIG_SWSTART_Reset      ((uint32_t)0xFFAFFFFF)
+#define CTLR2_EXTTRIG_SWSTART_Set ((uint32_t)0x00500000)
+#define CTLR2_EXTTRIG_SWSTART_Reset ((uint32_t)0xFFAFFFFF)
 
 /* ADC JEXTSEL mask */
-#define CTLR2_JEXTSEL_Reset              ((uint32_t)0xFFFF8FFF)
+#define CTLR2_JEXTSEL_Reset ((uint32_t)0xFFFF8FFF)
 
 /* ADC JEXTTRIG mask */
-#define CTLR2_JEXTTRIG_Set               ((uint32_t)0x00008000)
-#define CTLR2_JEXTTRIG_Reset             ((uint32_t)0xFFFF7FFF)
+#define CTLR2_JEXTTRIG_Set ((uint32_t)0x00008000)
+#define CTLR2_JEXTTRIG_Reset ((uint32_t)0xFFFF7FFF)
 
 /* ADC JSWSTART mask */
-#define CTLR2_JSWSTART_Set               ((uint32_t)0x00200000)
+#define CTLR2_JSWSTART_Set ((uint32_t)0x00200000)
 
 /* ADC injected software start mask */
-#define CTLR2_JEXTTRIG_JSWSTART_Set      ((uint32_t)0x00208000)
-#define CTLR2_JEXTTRIG_JSWSTART_Reset    ((uint32_t)0xFFDF7FFF)
+#define CTLR2_JEXTTRIG_JSWSTART_Set ((uint32_t)0x00208000)
+#define CTLR2_JEXTTRIG_JSWSTART_Reset ((uint32_t)0xFFDF7FFF)
 
 /* ADC TSPD mask */
-#define CTLR2_TSVREFE_Set                ((uint32_t)0x00800000)
-#define CTLR2_TSVREFE_Reset              ((uint32_t)0xFF7FFFFF)
+#define CTLR2_TSVREFE_Set ((uint32_t)0x00800000)
+#define CTLR2_TSVREFE_Reset ((uint32_t)0xFF7FFFFF)
 
 /* CTLR2 register Mask */
-#define CTLR2_CLEAR_Mask                 ((uint32_t)0xFFF1F7FD)
+#define CTLR2_CLEAR_Mask ((uint32_t)0xFFF1F7FD)
 
 /* ADC SQx mask */
-#define RSQR3_SQ_Set                     ((uint32_t)0x0000001F)
-#define RSQR2_SQ_Set                     ((uint32_t)0x0000001F)
-#define RSQR1_SQ_Set                     ((uint32_t)0x0000001F)
+#define RSQR3_SQ_Set ((uint32_t)0x0000001F)
+#define RSQR2_SQ_Set ((uint32_t)0x0000001F)
+#define RSQR1_SQ_Set ((uint32_t)0x0000001F)
 
 /* RSQR1 register Mask */
-#define RSQR1_CLEAR_Mask                 ((uint32_t)0xFF0FFFFF)
+#define RSQR1_CLEAR_Mask ((uint32_t)0xFF0FFFFF)
 
 /* ADC JSQx mask */
-#define ISQR_JSQ_Set                     ((uint32_t)0x0000001F)
+#define ISQR_JSQ_Set ((uint32_t)0x0000001F)
 
 /* ADC JL mask */
-#define ISQR_JL_Set                      ((uint32_t)0x00300000)
-#define ISQR_JL_Reset                    ((uint32_t)0xFFCFFFFF)
+#define ISQR_JL_Set ((uint32_t)0x00300000)
+#define ISQR_JL_Reset ((uint32_t)0xFFCFFFFF)
 
 /* ADC SMPx mask */
-#define SAMPTR1_SMP_Set                  ((uint32_t)0x00000007)
-#define SAMPTR2_SMP_Set                  ((uint32_t)0x00000007)
+#define SAMPTR1_SMP_Set ((uint32_t)0x00000007)
+#define SAMPTR2_SMP_Set ((uint32_t)0x00000007)
 
 /* ADC IDATARx registers offset */
-#define IDATAR_Offset                    ((uint8_t)0x28)
+#define IDATAR_Offset ((uint8_t)0x28)
 
 /* ADC1 RDATAR register base address */
-#define RDATAR_ADDRESS                   ((uint32_t)0x4001244C)
+#define RDATAR_ADDRESS ((uint32_t)0x4001244C)
 
 /*********************************************************************
  * @fn      ADC_DeInit
@@ -119,12 +119,12 @@
  */
 void ADC_DeInit(ADC_TypeDef *ADCx)
 {
-    if(ADCx == ADC1)
+    if (ADCx == ADC1)
     {
         RCC_APB2PeriphResetCmd(RCC_APB2Periph_ADC1, ENABLE);
         RCC_APB2PeriphResetCmd(RCC_APB2Periph_ADC1, DISABLE);
     }
-    else if(ADCx == ADC2)
+    else if (ADCx == ADC2)
     {
         RCC_APB2PeriphResetCmd(RCC_APB2Periph_ADC2, ENABLE);
         RCC_APB2PeriphResetCmd(RCC_APB2Periph_ADC2, DISABLE);
@@ -147,7 +147,7 @@ void ADC_DeInit(ADC_TypeDef *ADCx)
 void ADC_Init(ADC_TypeDef *ADCx, ADC_InitTypeDef *ADC_InitStruct)
 {
     uint32_t tmpreg1 = 0;
-    uint8_t  tmpreg2 = 0;
+    uint8_t tmpreg2 = 0;
 
     tmpreg1 = ADCx->CTLR1;
     tmpreg1 &= CTLR1_CLEAR_Mask;
@@ -201,7 +201,7 @@ void ADC_StructInit(ADC_InitTypeDef *ADC_InitStruct)
  */
 void ADC_Cmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR2 |= CTLR2_ADON_Set;
     }
@@ -223,7 +223,7 @@ void ADC_Cmd(ADC_TypeDef *ADCx, FunctionalState NewState)
  */
 void ADC_DMACmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR2 |= CTLR2_DMA_Set;
     }
@@ -253,7 +253,7 @@ void ADC_ITConfig(ADC_TypeDef *ADCx, uint16_t ADC_IT, FunctionalState NewState)
 
     itmask = (uint8_t)ADC_IT;
 
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR1 |= itmask;
     }
@@ -290,7 +290,7 @@ FlagStatus ADC_GetResetCalibrationStatus(ADC_TypeDef *ADCx)
 {
     FlagStatus bitstatus = RESET;
 
-    if((ADCx->CTLR2 & CTLR2_RSTCAL_Set) != (uint32_t)RESET)
+    if ((ADCx->CTLR2 & CTLR2_RSTCAL_Set) != (uint32_t)RESET)
     {
         bitstatus = SET;
     }
@@ -329,7 +329,7 @@ FlagStatus ADC_GetCalibrationStatus(ADC_TypeDef *ADCx)
 {
     FlagStatus bitstatus = RESET;
 
-    if((ADCx->CTLR2 & CTLR2_CAL_Set) != (uint32_t)RESET)
+    if ((ADCx->CTLR2 & CTLR2_CAL_Set) != (uint32_t)RESET)
     {
         bitstatus = SET;
     }
@@ -353,7 +353,7 @@ FlagStatus ADC_GetCalibrationStatus(ADC_TypeDef *ADCx)
  */
 void ADC_SoftwareStartConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR2 |= CTLR2_EXTTRIG_SWSTART_Set;
     }
@@ -377,7 +377,7 @@ FlagStatus ADC_GetSoftwareStartConvStatus(ADC_TypeDef *ADCx)
 {
     FlagStatus bitstatus = RESET;
 
-    if((ADCx->CTLR2 & CTLR2_SWSTART_Set) != (uint32_t)RESET)
+    if ((ADCx->CTLR2 & CTLR2_SWSTART_Set) != (uint32_t)RESET)
     {
         bitstatus = SET;
     }
@@ -426,7 +426,7 @@ void ADC_DiscModeChannelCountConfig(ADC_TypeDef *ADCx, uint8_t Number)
  */
 void ADC_DiscModeCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR1 |= CTLR1_DISCEN_Set;
     }
@@ -480,7 +480,7 @@ void ADC_RegularChannelConfig(ADC_TypeDef *ADCx, uint8_t ADC_Channel, uint8_t Ra
 {
     uint32_t tmpreg1 = 0, tmpreg2 = 0;
 
-    if(ADC_Channel > ADC_Channel_9)
+    if (ADC_Channel > ADC_Channel_9)
     {
         tmpreg1 = ADCx->SAMPTR1;
         tmpreg2 = SAMPTR1_SMP_Set << (3 * (ADC_Channel - 10));
@@ -499,7 +499,7 @@ void ADC_RegularChannelConfig(ADC_TypeDef *ADCx, uint8_t ADC_Channel, uint8_t Ra
         ADCx->SAMPTR2 = tmpreg1;
     }
 
-    if(Rank < 7)
+    if (Rank < 7)
     {
         tmpreg1 = ADCx->RSQR3;
         tmpreg2 = RSQR3_SQ_Set << (5 * (Rank - 1));
@@ -508,7 +508,7 @@ void ADC_RegularChannelConfig(ADC_TypeDef *ADCx, uint8_t ADC_Channel, uint8_t Ra
         tmpreg1 |= tmpreg2;
         ADCx->RSQR3 = tmpreg1;
     }
-    else if(Rank < 13)
+    else if (Rank < 13)
     {
         tmpreg1 = ADCx->RSQR2;
         tmpreg2 = RSQR2_SQ_Set << (5 * (Rank - 7));
@@ -540,7 +540,7 @@ void ADC_RegularChannelConfig(ADC_TypeDef *ADCx, uint8_t ADC_Channel, uint8_t Ra
  */
 void ADC_ExternalTrigConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR2 |= CTLR2_EXTTRIG_Set;
     }
@@ -589,7 +589,7 @@ uint32_t ADC_GetDualModeConversionValue(void)
  */
 void ADC_AutoInjectedConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR1 |= CTLR1_JAUTO_Set;
     }
@@ -612,7 +612,7 @@ void ADC_AutoInjectedConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
  */
 void ADC_InjectedDiscModeCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR1 |= CTLR1_JDISCEN_Set;
     }
@@ -666,7 +666,7 @@ void ADC_ExternalTrigInjectedConvConfig(ADC_TypeDef *ADCx, uint32_t ADC_External
  */
 void ADC_ExternalTrigInjectedConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR2 |= CTLR2_JEXTTRIG_Set;
     }
@@ -689,7 +689,7 @@ void ADC_ExternalTrigInjectedConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState
  */
 void ADC_SoftwareStartInjectedConvCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR2 |= CTLR2_JEXTTRIG_JSWSTART_Set;
     }
@@ -712,7 +712,7 @@ FlagStatus ADC_GetSoftwareStartInjectedConvCmdStatus(ADC_TypeDef *ADCx)
 {
     FlagStatus bitstatus = RESET;
 
-    if((ADCx->CTLR2 & CTLR2_JSWSTART_Set) != (uint32_t)RESET)
+    if ((ADCx->CTLR2 & CTLR2_JSWSTART_Set) != (uint32_t)RESET)
     {
         bitstatus = SET;
     }
@@ -768,7 +768,7 @@ void ADC_InjectedChannelConfig(ADC_TypeDef *ADCx, uint8_t ADC_Channel, uint8_t R
 {
     uint32_t tmpreg1 = 0, tmpreg2 = 0, tmpreg3 = 0;
 
-    if(ADC_Channel > ADC_Channel_9)
+    if (ADC_Channel > ADC_Channel_9)
     {
         tmpreg1 = ADCx->SAMPTR1;
         tmpreg2 = SAMPTR1_SMP_Set << (3 * (ADC_Channel - 10));
@@ -973,7 +973,7 @@ void ADC_AnalogWatchdogSingleChannelConfig(ADC_TypeDef *ADCx, uint8_t ADC_Channe
  */
 void ADC_TempSensorVrefintCmd(FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADC1->CTLR2 |= CTLR2_TSVREFE_Set;
     }
@@ -1002,7 +1002,7 @@ FlagStatus ADC_GetFlagStatus(ADC_TypeDef *ADCx, uint8_t ADC_FLAG)
 {
     FlagStatus bitstatus = RESET;
 
-    if((ADCx->STATR & ADC_FLAG) != (uint8_t)RESET)
+    if ((ADCx->STATR & ADC_FLAG) != (uint8_t)RESET)
     {
         bitstatus = SET;
     }
@@ -1055,7 +1055,7 @@ ITStatus ADC_GetITStatus(ADC_TypeDef *ADCx, uint16_t ADC_IT)
     itmask = ADC_IT >> 8;
     enablestatus = (ADCx->CTLR1 & (uint8_t)ADC_IT);
 
-    if(((ADCx->STATR & itmask) != (uint32_t)RESET) && enablestatus)
+    if (((ADCx->STATR & itmask) != (uint32_t)RESET) && enablestatus)
     {
         bitstatus = SET;
     }
@@ -1102,8 +1102,8 @@ s32 TempSensor_Volt_To_Temper(s32 Value)
     s32 Temper, Refer_Volt, Refer_Temper;
     s32 k = 43;
 
-    Refer_Volt = (s32)((*(u32 *)0x1FFFF720) & 0x0000FFFF);
-    Refer_Temper = (s32)(((*(u32 *)0x1FFFF720) >> 16) & 0x0000FFFF);
+    Refer_Volt = (s32)((*(uint32_t *)0x1FFFF720) & 0x0000FFFF);
+    Refer_Temper = (s32)(((*(uint32_t *)0x1FFFF720) >> 16) & 0x0000FFFF);
 
     Temper = Refer_Temper - ((Value - Refer_Volt) * 10 + (k >> 1)) / k;
 
@@ -1122,7 +1122,7 @@ s32 TempSensor_Volt_To_Temper(s32 Value)
  */
 void ADC_BufferCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
 {
-    if(NewState != DISABLE)
+    if (NewState != DISABLE)
     {
         ADCx->CTLR1 |= (1 << 26);
     }
@@ -1143,24 +1143,29 @@ void ADC_BufferCmd(ADC_TypeDef *ADCx, FunctionalState NewState)
  */
 int16_t Get_CalibrationValue(ADC_TypeDef *ADCx)
 {
-    __IO uint8_t  i, j;
-    uint16_t      buf[10];
+    __IO uint8_t i, j;
+    uint16_t buf[10];
     __IO uint16_t t;
-#if defined (CH32V20x_D6)
+#if defined(CH32V20x_D6)
     __IO uint16_t p;
 #endif
 
-    for(i = 0; i < 10; i++){
+    for (i = 0; i < 10; i++)
+    {
         ADC_ResetCalibration(ADCx);
-        while(ADC_GetResetCalibrationStatus(ADCx));
+        while (ADC_GetResetCalibrationStatus(ADCx))
+            ;
         ADC_StartCalibration(ADCx);
-        while(ADC_GetCalibrationStatus(ADCx));
+        while (ADC_GetCalibrationStatus(ADCx))
+            ;
         buf[i] = ADCx->RDATAR;
     }
 
-    for(i = 0; i < 10; i++){
-        for(j = 0; j < 9; j++){
-            if(buf[j] > buf[j + 1])
+    for (i = 0; i < 10; i++)
+    {
+        for (j = 0; j < 9; j++)
+        {
+            if (buf[j] > buf[j + 1])
             {
                 t = buf[j];
                 buf[j] = buf[j + 1];
@@ -1169,42 +1174,49 @@ int16_t Get_CalibrationValue(ADC_TypeDef *ADCx)
         }
     }
 
-#if defined (CH32V20x_D8) || defined (CH32V20x_D8W)
+#if defined(CH32V20x_D8) || defined(CH32V20x_D8W)
     t = 0;
-    for( i = 0; i < 6; i++ ) {
+    for (i = 0; i < 6; i++)
+    {
         t += buf[i + 2];
     }
 
-    t = ( t / 6 ) + ( ( t % 6 ) / 3 );
+    t = (t / 6) + ((t % 6) / 3);
 
-    return ( int16_t )( 2048 - ( int16_t )t );
+    return (int16_t)(2048 - (int16_t)t);
 #else
     t = 0;
     p = 0;
     /* 1024 */
-    for(i = 0; i < 6; i++ ){
-            if(buf[i+2] > 1536) break;
-            t += buf[i+2];
+    for (i = 0; i < 6; i++)
+    {
+        if (buf[i + 2] > 1536)
+            break;
+        t += buf[i + 2];
     }
 
-    if(i > 0){
-            t = ( t / i ) + ( (( t % i )*2) / i );
+    if (i > 0)
+    {
+        t = (t / i) + (((t % i) * 2) / i);
     }
-    else t = 1024;
+    else
+        t = 1024;
 
     /* 2048 */
-    j = 6-i;
-    if(j > 0){
-        for(; i < 6; i++ ){
-                p += buf[i+2];
+    j = 6 - i;
+    if (j > 0)
+    {
+        for (; i < 6; i++)
+        {
+            p += buf[i + 2];
         }
 
-        p = ( p / j ) + ( (( p % j )*2) / j );
+        p = (p / j) + (((p % j) * 2) / j);
     }
-    else p = 2048;
+    else
+        p = 2048;
 
-    return ( int16_t )(((( int16_t )( 1024 - ( int16_t )t ) + ( int16_t )( 2048 - ( int16_t )p ))/2) + ((( int16_t )( 1024 - ( int16_t )t ) + ( int16_t )( 2048 - ( int16_t )p ))%2));
-
+    return (int16_t)((((int16_t)(1024 - (int16_t)t) + (int16_t)(2048 - (int16_t)p)) / 2) + (((int16_t)(1024 - (int16_t)t) + (int16_t)(2048 - (int16_t)p)) % 2));
 
 #endif
 }

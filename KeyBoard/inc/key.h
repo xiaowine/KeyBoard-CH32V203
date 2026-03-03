@@ -40,20 +40,20 @@ typedef enum
 typedef struct
 {
     key_debounce_state_e state; /* 当前状态 */
-    u8 sample_count;            /* 连续采样计数（用于确认转移） */
+    uint8_t sample_count;       /* 连续采样计数（用于确认转移） */
 } key_debounce_t;
 
 /* 过滤与四态管理接口 */
-void key_store_sample(u8 slot, const u8 sample[HC165_COUNT]);
+void key_store_sample(uint8_t slot, const uint8_t sample[HC165_COUNT]);
 void key_do_filter_and_update(void);
-key_debounce_state_e key_get_debounce_state(u8 key_idx);
+key_debounce_state_e key_get_debounce_state(uint8_t key_idx);
 
 /* 通过 SPI+DMA 控制 74HC165 读取的模块 API */
 void key_init(void);
 void key_start_scan(void);
-u8 key_transfer_complete(void);
-void key_copy_snapshot(u8 dest[HC165_COUNT]);
+uint8_t key_transfer_complete(void);
+void key_copy_snapshot(uint8_t dest[HC165_COUNT]);
 
-void output_data(const u8 rx_buf[HC165_COUNT]);
+void output_data(const uint8_t rx_buf[HC165_COUNT]);
 
 #endif

@@ -4,7 +4,7 @@ volatile int circle = 0;
 
 __attribute__((interrupt("WCH-Interrupt-fast"))) void TIM2_IRQHandler(void)
 {
-  volatile u16 tempcnt = TIM_GetCounter(TIM2), temparr = TIM2->ATRLR;
+  volatile uint16_t tempcnt = TIM_GetCounter(TIM2), temparr = TIM2->ATRLR;
   if (TIM_GetITStatus(TIM2, TIM_IT_Update))
   {
     if (tempcnt < temparr / 2)
