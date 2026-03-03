@@ -6,6 +6,11 @@ static u8 spi_dma_rx_buf[HC165_COUNT];
 static u8 hc165_snapshot[HC165_COUNT];
 static volatile u8 dma_transfer_complete_flag = 0;
 
+/* 3kHz 采样与过滤管理 */
+static u8 key_sample_buffer[KEY_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
+static u8 key_filtered_state[HC165_COUNT];                   /* 1ms 多数投票结果 */
+static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS];    /* 每键状态跟踪 */
+
 void key_init(void)
 {
     /* SPI+DMA 设置，用于通过 SPI1 读取 74HC165 */
@@ -40,7 +45,7 @@ void key_init(void)
     DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
     DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 
-    static uint8_t dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
+    static u8 dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
     DMA_InitStructure.DMA_MemoryBaseAddr = (u32)dummy_tx;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
     DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable; /* 发送固定值 */
@@ -61,17 +66,17 @@ void key_init(void)
     SPI_Cmd(SPI1, ENABLE);
 }
 
-RAM u8 key_transfer_complete(void)
+u8 key_transfer_complete(void)
 {
     return dma_transfer_complete_flag;
 }
 
-RAM void key_copy_snapshot(u8 dest[HC165_COUNT])
+void key_copy_snapshot(u8 dest[HC165_COUNT])
 {
     memcpy(dest, hc165_snapshot, HC165_COUNT);
 }
 
-RAM void key_start_scan(void)
+void key_start_scan(void)
 {
     DMA_Cmd(DMA1_Channel2, DISABLE); /* RX（接收）*/
     DMA_Cmd(DMA1_Channel3, DISABLE); /* TX（发送）*/
@@ -100,7 +105,7 @@ RAM void key_start_scan(void)
     DMA_Cmd(DMA1_Channel3, ENABLE);
 }
 
-RAM void output_data(const u8 rx_buf[HC165_COUNT])
+void output_data(const u8 rx_buf[HC165_COUNT])
 {
     char buffer[256];
     int offset = 0;
@@ -123,22 +128,99 @@ RAM void output_data(const u8 rx_buf[HC165_COUNT])
 }
 
 /**
- * @brief 检查指定按钮是否被按下
- * @param button_index 按钮索引 (0-23, 对应3个74HC165芯片的24个输入)
- * @return 1: 按钮按下, 0: 按钮未按下或索引无效
- * @note 74HC165输入逻辑: 0=按下, 1=未按下
+ * @brief 将本次采样存入指定槽位
+ * @param slot 采样槽位 (0~2)
+ * @param sample 待存采样数据
  */
-RAM u8 key_is_pressed(u8 button_index)
+void key_store_sample(u8 slot, const u8 sample[HC165_COUNT])
 {
-    /* 检查索引范围 */
-    if (button_index >= (HC165_COUNT * 8))
-        return 0;
+    if (slot >= KEY_SAMPLE_WINDOW)
+        return;
+    memcpy(key_sample_buffer[slot], sample, HC165_COUNT);
+}
 
-    u8 chip_index = button_index / 8; /* 确定是哪个74HC165芯片 */
-    u8 bit_index = button_index % 8;  /* 确定是芯片内的哪一位 */
+/**
+ * @brief 执行 2/3 多数投票并更新每键四态（连续 2 次确认转移）
+ * @note 应在凑够 3 次采样后调用（每 1ms 一次）
+ */
+void key_do_filter_and_update(void)
+{
+    /* 2/3 多数投票：利用布尔代数一次性处理整个字节
+     * 对三个采样 a, b, c，结果为 (a & b) | (b & c) | (a & c)
+     * 这表示至少 2 个采样为 1 的位位置
+     */
+    for (u8 byte_idx = 0; byte_idx < HC165_COUNT; byte_idx++)
+    {
+        u8 sample0 = key_sample_buffer[0][byte_idx];
+        u8 sample1 = key_sample_buffer[1][byte_idx];
+        u8 sample2 = key_sample_buffer[2][byte_idx];
 
-    /* 检查对应位，74HC165输入逻辑：0=按下，1=未按下 */
-    return !(hc165_snapshot[chip_index] & (1 << bit_index));
+        /* 布尔代数方式：(a & b) | (b & c) | (a & c) 给出都至少 2 个为 1 的位 */
+        u8 filtered = (sample0 & sample1) | (sample1 & sample2) | (sample0 & sample2);
+        key_filtered_state[byte_idx] = filtered;
+    }
+
+    /* 更新每键的四态状态机（连续 2 次确认转移） */
+    for (u8 key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
+    {
+        u8 byte_idx = key_idx >> 3;  /* key_idx / 8 */
+        u8 bit_idx = key_idx & 0x07; /* key_idx % 8 */
+        u8 key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
+
+        key_debounce_t *state = &key_debounce_state[key_idx];
+
+        switch (state->state)
+        {
+        case KEY_DEBOUNCE_IDLE:
+            /* 检测到按下（低电平有效：bit=0） */
+            if (key_level == 0)
+            {
+                state->sample_count++;
+                if (state->sample_count >= 2)
+                {
+                    state->state = KEY_DEBOUNCE_PRESSED;
+                    state->sample_count = 0;
+                }
+            }
+            else
+            {
+                state->sample_count = 0;
+            }
+            break;
+
+        case KEY_DEBOUNCE_PRESSED:
+            /* 检测到释放（高电平：bit=1） */
+            if (key_level == 1)
+            {
+                state->sample_count++;
+                if (state->sample_count >= 2)
+                {
+                    state->state = KEY_DEBOUNCE_IDLE;
+                    state->sample_count = 0;
+                }
+            }
+            else
+            {
+                state->sample_count = 0;
+            }
+            break;
+
+        default:
+            break;
+        }
+    }
+}
+
+/**
+ * @brief 获取指定按键的消抖状态
+ * @param key_idx 按键索引 (0-23)
+ * @return 按键状态 (KEY_DEBOUNCE_IDLE 或 KEY_DEBOUNCE_PRESSED)
+ */
+key_debounce_state_e key_get_debounce_state(u8 key_idx)
+{
+    if (key_idx >= KEY_TOTAL_KEYS)
+        return KEY_DEBOUNCE_IDLE;
+    return key_debounce_state[key_idx].state;
 }
 
 INTF void DMA1_Channel2_IRQHandler(void)

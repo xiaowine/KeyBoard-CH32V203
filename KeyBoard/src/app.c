@@ -7,15 +7,24 @@
 #include "hid_comm.h"
 
 static volatile key_scan_state_t key_state = KEY_STATE_IDLE;
-static u16 scan_tick_counter = 0;
+static volatile u16 scan_tick_counter = 0;
 static u8 last_snapshot[HC165_COUNT];
 static u8 key_pressed_count = 0;
 static u8 debug = 0;
 
-// uint8_t KB_Data_Pack[DEF_ENDP_SIZE_KB] = {0x00}; // Keyboard IN Data Packet
-// uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len);
+/* 子采样槽位管理（0 -> 1 -> 2 -> 0） */
+static u8 next_sample_slot = 0;
+static volatile u8 active_sample_slot = 0;
 
-void my_hid_comm_callback(uint8_t *data, uint16_t len);
+/* 扫描超时保护（单位：TIM3 update tick） */
+#define KEY_SCAN_TIMEOUT_TICKS 6U
+static volatile u8 scan_timeout_ticks = 0;
+
+u8 KB_Data_Pack[DEF_ENDP_SIZE_KB] = {0x00}; // Keyboard IN Data Packet
+
+u8 USBD_ENDPx_DataUp(u8 endp, u8 *pbuf, u16 len);
+u8 USBD_SendCustomData(u8 *pbuf, u16 len);
+void my_hid_comm_callback(u8 *data, u16 len);
 
 void app_init(void)
 {
@@ -89,8 +98,8 @@ void app_init(void)
 
         TIM_TimeBaseInitTypeDef TIM_TimeBaseInitStructure = {0};
 
-        // 设置定时器频率为 10 kHz（即 0.1 ms 的分辨率）
-        const u16 tick_freq = 10000U;
+        // 设置定时器基准频率为 30kHz（用于分频得到 3kHz 扫描中断）
+        const u16 tick_freq = 30000U;
         // 计算预分频值
         u16 prescaler = SystemCoreClock / tick_freq;
         // 预分频值至少为 1
@@ -98,7 +107,7 @@ void app_init(void)
             prescaler = 1;
         prescaler -= 1;
 
-        // 计算周期：100 ms = 0.1 s -> ticks = tick_freq * 0.1 = tick_freq / 10
+        // 计算周期：period_ticks = tick_freq / 3000 = 10
         u16 period_ticks = tick_freq / KEYBOARD_SCAN_FREQUENCY_HZ;
         // 周期至少为 1
         if (period_ticks == 0)
@@ -134,35 +143,48 @@ void app_init(void)
     PRINT("App Init OK!\r\n");
 }
 
-RAM void app_run(void)
+void app_run(void)
 {
     hid_comm_process();
     switch (key_state)
     {
-    case KEY_STATE_IDLE:
-        /* 空闲状态，无操作 */
-        break;
-
     case KEY_STATE_SCANNING:
         /* 检查 DMA 传输是否完成 */
         if (key_transfer_complete())
         {
-            /* 将模块快照复制到应用层的 last_snapshot */
+            /* 将本次采样存入指定槽位 */
             key_copy_snapshot(last_snapshot);
-            key_state = KEY_STATE_DATA_READY;
+            key_store_sample(active_sample_slot, last_snapshot);
+
+            /* 如果凑够 3 次采样（即当前收集的是第 3 个样本），执行多数投票 */
+            if (active_sample_slot == (KEY_SAMPLE_WINDOW - 1))
+            {
+                key_do_filter_and_update();
+            }
+
+            next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
+
+            hid_comm_send((u8 *)last_snapshot, HC165_COUNT);
+            key_state = KEY_STATE_IDLE;
+            scan_timeout_ticks = 0;
+            TIM_Cmd(TIM3, ENABLE);
+        }
+        else if (scan_timeout_ticks >= KEY_SCAN_TIMEOUT_TICKS)
+        {
+            key_state = KEY_STATE_IDLE;
+            scan_timeout_ticks = 0;
+            TIM_Cmd(TIM3, ENABLE);
+            PRINT("Key scan timeout, recovery\r\n");
         }
         break;
-
-    case KEY_STATE_DATA_READY:
-        /* 数据处理完毕，回到空闲状态 */
-        key_state = KEY_STATE_IDLE;
+    default:
         break;
     }
 
     /* 定期输出数据（每秒一次）*/
     if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
     {
-        if (key_is_pressed(2))
+        if (key_get_debounce_state(2) == KEY_DEBOUNCE_PRESSED)
         {
             key_pressed_count = key_pressed_count + 1;
         }
@@ -171,24 +193,24 @@ RAM void app_run(void)
             key_pressed_count = 0;
         }
         scan_tick_counter = 0;
-        output_data((const u8 *)last_snapshot);
-        hid_comm_send((u8 *)last_snapshot, HC165_COUNT);
-    }
-    if (key_pressed_count >= 2)
-    {
-        if (debug)
+        if (key_pressed_count >= 2)
         {
-            debug = 0;
-            GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
-            PRINT("Debug mode disabled\r\n");
+            if (debug)
+            {
+                debug = 0;
+                GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
+                PRINT("Debug mode disabled\r\n");
+            }
+            else
+            {
+                debug = 1;
+                GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, DISABLE);
+                PRINT("Debug mode enabled\r\n");
+            }
+            key_pressed_count = 0;
         }
-        else
-        {
-            debug = 1;
-            GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, DISABLE);
-            PRINT("Debug mode enabled\r\n");
-        }
-        key_pressed_count = 0;
+        // // output_data((const u8 *)last_snapshot);
+        // hid_comm_send((u8 *)last_snapshot, HC165_COUNT);
     }
 }
 
@@ -202,29 +224,24 @@ INTF void TIM3_IRQHandler(void)
         if (key_state == KEY_STATE_IDLE)
         {
             key_state = KEY_STATE_SCANNING;
+            active_sample_slot = next_sample_slot;
+            scan_timeout_ticks = 0;
+            TIM_Cmd(TIM3, DISABLE);
             key_start_scan();
         }
-        // if (key_is_pressed(16))
-        // {
-        //     KB_Data_Pack[2] = 0x1A;
-        //     KB_Data_Pack[3] = 0x1B;
-        // }
-        // else
-        // {
-        //     KB_Data_Pack[2] = 0x00;
-        //     KB_Data_Pack[3] = 0x00;
-        // }
-
-        // uint8_t status = USBD_ENDPx_DataUp(ENDP1, KB_Data_Pack, DEF_ENDP_SIZE_KB);
+        else if (scan_timeout_ticks < 0xFF)
+        {
+            scan_timeout_ticks++;
+        }
+        TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
     }
-    TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
 }
 
-void my_hid_comm_callback(uint8_t *data, uint16_t len)
+void my_hid_comm_callback(u8 *data, u16 len)
 {
     PRINT("App: Received %d bytes from HID comm\r\n", len);
     // 这里可以添加对接收到的数据的处理逻辑
-    for (uint16_t i = 0; i < len; i++)
+    for (u16 i = 0; i < len; i++)
     {
         PRINT("  Byte %d: 0x%02X\r\n", i, data[i]);
     }

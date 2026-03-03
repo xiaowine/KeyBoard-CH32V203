@@ -84,16 +84,16 @@ void EP5_IN_Callback(void)
 /*********************************************************************
  * @fn      EP5_OUT_Callback
  *
- * @brief  Endpoint 5 OUT.
+ * @brief  Endpoint 5 OUT - minimal overhead data receive
  *
  * @return  none
  */
 void EP5_OUT_Callback(void)
 {
-	// Read received data
+	/* Direct read from PMA to application buffer, no intermediate copy */
 	USB_Rx_Cnt = USB_SIL_Read(EP5_OUT, (uint8_t *)USBD_HId_Comm_Data_Buffer);
 
-	// Set EP5 RX valid for next reception
+	/* Re-enable RX for next reception */
 	SetEPRxValid(ENDP5);
 }
 

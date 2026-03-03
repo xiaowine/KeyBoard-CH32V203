@@ -24,14 +24,36 @@
 /* 74HC165 串联寄存器数量 */
 #define HC165_COUNT 3
 
+/* 按键与采样窗口配置 */
+#define KEY_TOTAL_KEYS (HC165_COUNT * 8)
+#define KEY_SAMPLE_WINDOW 3
+#define KEY_DEBOUNCE_CONFIRM_COUNT 2
+
+/* 按键消抖状态 */
+typedef enum
+{
+    KEY_DEBOUNCE_IDLE = 0, /* 空闲（未按下） */
+    KEY_DEBOUNCE_PRESSED,  /* 按下确认 */
+} key_debounce_state_e;
+
+/* 每键的消抖状态跟踪 */
+typedef struct
+{
+    key_debounce_state_e state; /* 当前状态 */
+    u8 sample_count;            /* 连续采样计数（用于确认转移） */
+} key_debounce_t;
+
+/* 过滤与四态管理接口 */
+void key_store_sample(u8 slot, const u8 sample[HC165_COUNT]);
+void key_do_filter_and_update(void);
+key_debounce_state_e key_get_debounce_state(u8 key_idx);
+
 /* 通过 SPI+DMA 控制 74HC165 读取的模块 API */
 void key_init(void);
-RAM void key_start_scan(void);
-RAM u8 key_transfer_complete(void);
-RAM void key_copy_snapshot(u8 dest[HC165_COUNT]);
+void key_start_scan(void);
+u8 key_transfer_complete(void);
+void key_copy_snapshot(u8 dest[HC165_COUNT]);
 
-RAM void output_data(const u8 rx_buf[HC165_COUNT]);
-RAM u8 key_is_pressed(u8 button_index);
-// u8 *gekey_filtered(u8 attempts, unsigned int delay_ms);
+void output_data(const u8 rx_buf[HC165_COUNT]);
 
 #endif

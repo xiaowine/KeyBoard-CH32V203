@@ -6,7 +6,7 @@
  * Description        : This file provides all the PWR firmware functions.
  *********************************************************************************
  * Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
- * Attention: This software (modified or not) and binary are used for 
+ * Attention: This software (modified or not) and binary are used for
  * microcontroller manufactured by Nanjing Qinheng Microelectronics.
  *******************************************************************************/
 #include "ch32v20x_pwr.h"
@@ -14,8 +14,8 @@
 
 /* PWR registers bit mask */
 /* CTLR register bit mask */
-#define CTLR_DS_MASK     ((uint32_t)0xFFFFFFFC)
-#define CTLR_PLS_MASK    ((uint32_t)0xFFFFFF1F)
+#define CTLR_DS_MASK ((uint32_t)0xFFFFFFFC)
+#define CTLR_PLS_MASK ((uint32_t)0xFFFFFF1F)
 
 /*********************************************************************
  * @fn      PWR_DeInit
@@ -43,7 +43,7 @@ void PWR_DeInit(void)
  */
 void PWR_BackupAccessCmd(FunctionalState NewState)
 {
-    if(NewState)
+    if (NewState)
     {
         PWR->CTLR |= (1 << 8);
     }
@@ -64,7 +64,7 @@ void PWR_BackupAccessCmd(FunctionalState NewState)
  */
 void PWR_PVDCmd(FunctionalState NewState)
 {
-    if(NewState)
+    if (NewState)
     {
         PWR->CTLR |= (1 << 4);
     }
@@ -113,7 +113,7 @@ void PWR_PVDLevelConfig(uint32_t PWR_PVDLevel)
  */
 void PWR_WakeUpPinCmd(FunctionalState NewState)
 {
-    if(NewState)
+    if (NewState)
     {
         PWR->CSR |= (1 << 8);
     }
@@ -147,7 +147,7 @@ void PWR_EnterSTOPMode(uint32_t PWR_Regulator, uint8_t PWR_STOPEntry)
 
     NVIC->SCTLR |= (1 << 2);
 
-    if(PWR_STOPEntry == PWR_STOPEntry_WFI)
+    if (PWR_STOPEntry == PWR_STOPEntry_WFI)
     {
         __WFI();
     }
@@ -191,7 +191,7 @@ FlagStatus PWR_GetFlagStatus(uint32_t PWR_FLAG)
 {
     FlagStatus bitstatus = RESET;
 
-    if((PWR->CSR & PWR_FLAG) != (uint32_t)RESET)
+    if ((PWR->CSR & PWR_FLAG) != (uint32_t)RESET)
     {
         bitstatus = SET;
     }
@@ -221,7 +221,7 @@ void PWR_ClearFlag(uint32_t PWR_FLAG)
 /*********************************************************************
  * @fn      PWR_EnterSTANDBYMode_RAM
  *
- * @brief   Enters STANDBY mode with RAM data retention function on.
+ * @brief   Enters STANDBY mode with data retention function on.
  *
  * @return  none
  */
@@ -233,12 +233,12 @@ void PWR_EnterSTANDBYMode_RAM(void)
     tmpreg |= PWR_CTLR_CWUF;
     tmpreg |= PWR_CTLR_PDDS;
 
-#if defined (CH32V20x_D8) || defined (CH32V20x_D8W)
-    //2K+30K in standby w power.
+#if defined(CH32V20x_D8) || defined(CH32V20x_D8W)
+    // 2K+30K in standby w power.
     tmpreg |= (0x1 << 16) | (0x1 << 17);
 #else
-    //RAM in standby power.
-    tmpreg |= ( ( uint32_t )1 << 16 );
+    // in standby power.
+    tmpreg |= ((uint32_t)1 << 16);
 
 #endif
 
@@ -252,7 +252,7 @@ void PWR_EnterSTANDBYMode_RAM(void)
 /*********************************************************************
  * @fn      PWR_EnterSTANDBYMode_RAM_LV
  *
- * @brief   Enters STANDBY mode with RAM data retention function and LV mode on.
+ * @brief   Enters STANDBY mode with data retention function and LV mode on.
  *
  * @return  none
  */
@@ -264,16 +264,16 @@ void PWR_EnterSTANDBYMode_RAM_LV(void)
     tmpreg |= PWR_CTLR_CWUF;
     tmpreg |= PWR_CTLR_PDDS;
 
-#if defined (CH32V20x_D8) || defined (CH32V20x_D8W)
-    //2K+30K in standby power.
+#if defined(CH32V20x_D8) || defined(CH32V20x_D8W)
+    // 2K+30K in standby power.
     tmpreg |= (0x1 << 16) | (0x1 << 17);
-    //2K+30K in standby LV .
+    // 2K+30K in standby LV .
     tmpreg |= (0x1 << 20);
 #else
-    //RAM in standby power.
-    tmpreg |= ( ( uint32_t )1 << 16 );
-    //RAM in standby LV .
-    tmpreg |= ( ( uint32_t )1 << 20 );
+    // in standby power.
+    tmpreg |= ((uint32_t)1 << 16);
+    // in standby LV .
+    tmpreg |= ((uint32_t)1 << 20);
 
 #endif
 
@@ -287,7 +287,7 @@ void PWR_EnterSTANDBYMode_RAM_LV(void)
 /*********************************************************************
  * @fn      PWR_EnterSTANDBYMode_RAM_VBAT_EN
  *
- * @brief   Enters STANDBY mode with RAM data retention function on (VBAT Enable).
+ * @brief   Enters STANDBY mode with data retention function on (VBAT Enable).
  *
  * @return  none
  */
@@ -299,12 +299,12 @@ void PWR_EnterSTANDBYMode_RAM_VBAT_EN(void)
     tmpreg |= PWR_CTLR_CWUF;
     tmpreg |= PWR_CTLR_PDDS;
 
-#if defined (CH32V20x_D8) || defined (CH32V20x_D8W)
-    //2K+30K in standby power (VBAT Enable).
+#if defined(CH32V20x_D8) || defined(CH32V20x_D8W)
+    // 2K+30K in standby power (VBAT Enable).
     tmpreg |= (0x1 << 18) | (0x1 << 19);
 #else
-      //RAM in standby w power.
-    tmpreg |= ( ( uint32_t )1 << 18 );
+    // in standby w power.
+    tmpreg |= ((uint32_t)1 << 18);
 
 #endif
 
@@ -318,7 +318,7 @@ void PWR_EnterSTANDBYMode_RAM_VBAT_EN(void)
 /*********************************************************************
  * @fn      PWR_EnterSTANDBYMode_RAM_LV_VBAT_EN
  *
- * @brief   Enters STANDBY mode with RAM data retention function and LV mode on(VBAT Enable).
+ * @brief   Enters STANDBY mode with data retention function and LV mode on(VBAT Enable).
  *
  * @return  none
  */
@@ -330,16 +330,16 @@ void PWR_EnterSTANDBYMode_RAM_LV_VBAT_EN(void)
     tmpreg |= PWR_CTLR_CWUF;
     tmpreg |= PWR_CTLR_PDDS;
 
-#if defined (CH32V20x_D8) || defined (CH32V20x_D8W)
-    //2K+30K in standby power (VBAT Enable).
+#if defined(CH32V20x_D8) || defined(CH32V20x_D8W)
+    // 2K+30K in standby power (VBAT Enable).
     tmpreg |= (0x1 << 18) | (0x1 << 19);
-    //2K+30K in standby LV .
+    // 2K+30K in standby LV .
     tmpreg |= (0x1 << 20);
 #else
-      //RAM in standby w power.
-    tmpreg |= ( ( uint32_t )1 << 18 );
-    //RAM in standby LV .
-    tmpreg |= ( ( uint32_t )1 << 20 );
+    // in standby w power.
+    tmpreg |= ((uint32_t)1 << 18);
+    // in standby LV .
+    tmpreg |= ((uint32_t)1 << 20);
 
 #endif
 
@@ -350,11 +350,10 @@ void PWR_EnterSTANDBYMode_RAM_LV_VBAT_EN(void)
     __WFI();
 }
 
-
 /*********************************************************************
  * @fn      PWR_EnterSTOPMode_RAM_LV
  *
- * @brief   Enters STOP mode with RAM data retention function and LV mode on.
+ * @brief   Enters STOP mode with data retention function and LV mode on.
  *
  * @param   PWR_Regulator - specifies the regulator state in STOP mode.
  *            PWR_Regulator_ON - STOP mode with regulator ON
@@ -372,12 +371,12 @@ void PWR_EnterSTOPMode_RAM_LV(uint32_t PWR_Regulator, uint8_t PWR_STOPEntry)
     tmpreg &= CTLR_DS_MASK;
     tmpreg |= PWR_Regulator;
 
-#if defined (CH32V20x_D8) || defined (CH32V20x_D8W)
+#if defined(CH32V20x_D8) || defined(CH32V20x_D8W)
 
     tmpreg |= (0x1 << 20);
 #else
 
-    tmpreg |= ( ( uint32_t )1 << 20 );
+    tmpreg |= ((uint32_t)1 << 20);
 
 #endif
 
@@ -385,7 +384,7 @@ void PWR_EnterSTOPMode_RAM_LV(uint32_t PWR_Regulator, uint8_t PWR_STOPEntry)
 
     NVIC->SCTLR |= (1 << 2);
 
-    if(PWR_STOPEntry == PWR_STOPEntry_WFI)
+    if (PWR_STOPEntry == PWR_STOPEntry_WFI)
     {
         __WFI();
     }
