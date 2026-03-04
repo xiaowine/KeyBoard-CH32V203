@@ -135,15 +135,66 @@ uint8_t USBD_SendCustomData(uint8_t* pbuf, uint16_t len)
  * @fn      USBD_SendConsumerReport
  * @brief   Send Consumer Control report via EP6 IN
  */
-uint8_t USBD_SendConsumerReport(uint16_t usage)
+uint8_t USBD_SendConsumerReport(const uint16_t* usages, uint8_t count)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_CONSUMER];
+    uint16_t report_len = 1; /* start with Report ID */
 
-    /* Report ID (1 byte) + Usage (2 bytes) -> total 3 bytes; pad to endpoint size */
+    if (count > 3)
+        count = 3; /* descriptor supports up to 3 usages */
+
+    /* Report ID (1 byte) */
     send_buffer[0] = 0x06; /* Report ID 6 for consumer */
-    send_buffer[1] = (uint8_t)(usage & 0xFF);
-    send_buffer[2] = (uint8_t)((usage >> 8) & 0xFF);
 
-    /* send only Report ID + 2-byte usage (3 bytes) so host parses as standard HID report */
-    return USBD_ENDPx_DataUp(ENDP6, send_buffer, DEF_ENDP_SIZE_CONSUMER);
+    for (uint8_t i = 0; i < count; i++)
+    {
+        send_buffer[1 + i * 2] = (uint8_t)(usages[i] & 0xFF);
+        send_buffer[1 + i * 2 + 1] = (uint8_t)((usages[i] >> 8) & 0xFF);
+        report_len += 2; /* each usage is 2 bytes (16-bit) */
+    }
+
+    /* send only the actual report length (Report ID + usages) */
+    return USBD_ENDPx_DataUp(ENDP6, send_buffer, report_len);
+}
+
+/**
+ * @fn      USBD_SendKeyboardReports
+ * @brief   Pack and send keyboard HID reports (6-key rollover) across endpoints.
+ *
+ * The function will create reports of size DEF_ENDP_SIZE_KB with layout:
+ * [modifiers, reserved, k1..k6]
+ * It sends up to 6 usages per report to endpoints starting at ENDP1.
+ */
+uint8_t USBD_SendKeyboardReports(const uint8_t modifiers, const uint8_t* codes, const uint8_t total_codes)
+{
+    static uint8_t send_buffer[DEF_ENDP_SIZE_KB];
+
+    const uint8_t needed_groups = total_codes > 0 ? (total_codes + 5) / 6 : 1;
+
+    for (uint8_t grp = 0; grp < needed_groups; grp++)
+    {
+        const uint8_t offset = grp * 6;
+
+        /* Prepare header */
+        send_buffer[0] = modifiers;
+        send_buffer[1] = 0; /* reserved */
+
+        /* Clear six key slots */
+        for (uint8_t i = 0; i < 6; i++)
+        {
+            send_buffer[2 + i] = 0;
+        }
+
+        if (offset < total_codes)
+        {
+            const uint8_t to_copy = (uint8_t)(total_codes - offset > 6 ? 6 : total_codes - offset);
+            /* Copy only the required key bytes (minimal memory ops) */
+            memcpy(&send_buffer[2], &codes[offset], to_copy);
+        }
+
+        /* Send using existing low-level function; map grp 0 -> endpoint 1 */
+        USBD_ENDPx_DataUp((uint8_t)(grp + 1), send_buffer, DEF_ENDP_SIZE_KB);
+    }
+
+    return USB_SUCCESS;
 }

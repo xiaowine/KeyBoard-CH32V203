@@ -327,7 +327,7 @@ const uint8_t USBD_CustomRepDesc[USBD_SIZE_REPORT_DESC_CUSTOM] =
         0xC0              // End Collection
 };
 
-/* Consumer HID Report Descriptor - 修正版 */
+/* Consumer HID Report Descriptor */
 const uint8_t USBD_ConsumerRepDesc[USBD_SIZE_REPORT_DESC_CONSUMER] =
     {
         0x05, 0x0C,       // Usage Page (Consumer)
@@ -335,11 +335,11 @@ const uint8_t USBD_ConsumerRepDesc[USBD_SIZE_REPORT_DESC_CONSUMER] =
         0xA1, 0x01,       // Collection (Application)
         0x85, 0x06,       //   REPORT_ID (6)
         0x15, 0x00,       //   Logical Minimum (0)
-        0x26, 0xFF, 0x03, //   Logical Maximum (0x3FF = 1023, 覆盖了所有多媒体和亮度键)
+        0x26, 0xFF, 0x03, //   Logical Maximum
         0x19, 0x00,       //   Usage Minimum (0)
-        0x2A, 0x9C, 0x02, //   Usage Maximum (0x029C = 668) -- use 0x2A for 2-byte value
+        0x2A, 0x9C, 0x02, //   Usage Maximum
         0x75, 0x10,       //   Report Size (16)
-        0x95, 0x01,       //   Report Count (1)
+        0x95, 0x03,       //   Report Count (3)
         0x81, 0x00,       //   Input (Data,Array,Absolute)
         0xC0              // End Collection
 };

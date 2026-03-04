@@ -93,44 +93,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
         scan &= scan - 1; // 清除最低位的 1
     }
 
-    // 3. 将收集到的 codes 自动装箱到端点报告中
-    // 每个报告格式：[修饰键(modifiers), 保留(reserved), k1, k2, k3, k4, k5, k6]
-    static uint8_t send_buf[DEF_ENDP_SIZE_KB] = {0};
-
-    // 计算实际需要的分组数（至少1个，用于发送键位释放包）
-    const uint8_t needed_groups = total_codes > 0 ? (total_codes + 5) / 6 : 1;
-
-    for (uint8_t grp = 0; grp < needed_groups; grp++)
-    {
-        const uint8_t code_offset = grp * 6;
-        // 清空报文头和 6 个键位槽。对如此小且固定大小的报文使用显式赋值可避免编译器
-        // 在每次循环中生成对 memset 的调用
-        // 第 1 字节为合并的修饰位（所有分组共用）
-        send_buf[0] = modifier_bits; // 修饰键
-        for (uint8_t slot = 0; slot < 6; slot++)
-        {
-            send_buf[2 + slot] = 0;
-        }
-
-        // 填充 6 个键槽 (从 byte index 2 开始)
-        for (uint8_t slot = 0; slot < 6; slot++)
-        {
-            const uint8_t current_code_idx = code_offset + slot;
-
-            if (current_code_idx < total_codes)
-            {
-                send_buf[2 + slot] = all_codes[current_code_idx];
-            }
-            else
-
-            {
-                break; // 没有更多按下的键了
-            }
-        }
-
-        // 4. 发送对应端点
-        USBD_ENDPx_DataUp(grp + 1, send_buf, DEF_ENDP_SIZE_KB);
-    }
+    /* 将上面收集到的 codes 发送出去；发送细节由 usb_endp 模块负责以减少拷贝 */
+    USBD_SendKeyboardReports(modifier_bits, all_codes, total_codes);
 
     // 更新 prev_keys 为本次快照的真实键位（注意上面位扫描使用了副本 scan）
     prev_keys = keys;
