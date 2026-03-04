@@ -1,7 +1,7 @@
 #include "debug.h"
 #include "app.h"
 #include "usb_lib.h"
-
+#include "utils.h"
 /* Global typedef */
 
 /* Global define */
@@ -15,7 +15,7 @@
  *
  * @return  none
  */
-int main(void)
+RAM int main(void)
 {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
     SystemCoreClockUpdate();

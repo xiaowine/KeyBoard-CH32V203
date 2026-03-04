@@ -21,6 +21,11 @@
 				"parentLogicPath": "",
 				"type": "file",
 				"name": "*.wvproj"
+			},
+			{
+				"name": "CMakeLists.txt",
+				"parentLogicPath": "",
+				"type": "file"
 			}
 		],
 		"projectName": "KeyBoard",
@@ -266,7 +271,7 @@
 				},
 				"createFlash": {
 					"enabled": true,
-					"outputFileFormat": "ihex",
+					"outputFileFormat": "ihexAndbinary",
 					"copy_only_section_text": false,
 					"copy_only_section_data": false,
 					"copy_only_sections": [],

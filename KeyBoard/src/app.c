@@ -20,7 +20,7 @@ static volatile uint8_t active_sample_slot = 0;
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 static volatile uint8_t scan_timeout_ticks = 0;
 
-void my_hid_comm_callback(uint8_t *data, uint16_t len);
+void my_hid_comm_callback(uint8_t* data, uint16_t len);
 
 void app_init(void)
 {
@@ -161,7 +161,7 @@ void app_init(void)
     PRINT("App Init OK!\r\n");
 }
 
-void app_run(void)
+ void app_run(void)
 {
     hid_comm_process();
     switch (key_scan_state)
@@ -232,7 +232,7 @@ void app_run(void)
     }
 }
 
-INTF void TIM3_IRQHandler(void)
+RAM INTF void TIM3_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM3, TIM_IT_Update) == SET)
     {
@@ -255,7 +255,7 @@ INTF void TIM3_IRQHandler(void)
     }
 }
 
-INTF void TIM4_IRQHandler(void)
+RAM INTF void TIM4_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
     {
@@ -264,7 +264,7 @@ INTF void TIM4_IRQHandler(void)
     }
 }
 
-void my_hid_comm_callback(uint8_t *data, uint16_t len)
+void my_hid_comm_callback(uint8_t* data, uint16_t len)
 {
     PRINT("App: Received %d bytes from HID comm\r\n", len);
     // 这里可以添加对接收到的数据的处理逻辑

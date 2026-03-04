@@ -24,14 +24,14 @@ SET(CMAKE_CXX_COMPILER_WORKS TRUE)
 SET(CMAKE_ASM_COMPILER_WORKS TRUE)
 
 # Use MRS toolchian to compile
-if(DEFINED ENV{TOOLCHAIN_FOLDER})
+if (DEFINED ENV{TOOLCHAIN_FOLDER})
     message(STATUS "Using TOOLCHAIN_FOLDER from environment: $ENV{TOOLCHAIN_FOLDER}")
     set(TOOLCHAIN_FOLDER "$ENV{TOOLCHAIN_FOLDER}")
-else()
+else ()
     # Fallback default used when the environment variable is not set
     set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12")
     message(STATUS "TOOLCHAIN_FOLDER not set in environment; using default: ${TOOLCHAIN_FOLDER}")
-endif()
+endif ()
 set(TOOLCHAIN_PREFIX "riscv-wch-elf-")
 set(CMAKE_C_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}g++.exe")
@@ -46,6 +46,7 @@ set(TARGET_ARTIFACT "${PROJECT_NAME}.elf")
 set(MAP_FILE "${PROJECT_NAME}.map")
 set(HEX_FILE "${PROJECT_NAME}.hex")
 set(LST_FILE "${PROJECT_NAME}.lst")
+set(BIN_FILE "${PROJECT_NAME}.bin")
 
 set(CMAKE_C_OUTPUT_EXTENSION .o)
 set(CMAKE_CXX_OUTPUT_EXTENSION .o)
@@ -85,7 +86,8 @@ target_link_libraries("${TARGET_ARTIFACT}")
 add_custom_command(TARGET "${TARGET_ARTIFACT}"
         POST_BUILD
         COMMAND ${CMAKE_OBJCOPY} ARGS -O ihex "${TARGET_ARTIFACT}" "${HEX_FILE}"
+        COMMAND ${CMAKE_OBJCOPY} ARGS -O binary "${TARGET_ARTIFACT}" "${BIN_FILE}"
         COMMAND ${CMAKE_OBJDUMP} ARGS --all-headers --demangle --disassemble -M xw "${TARGET_ARTIFACT}" > "${LST_FILE}"
-        COMMAND ${CMAKE_SIZE} ARGS --format=berkeley "${TARGET_ARTIFACT}"
+        COMMAND ${CMAKE_SIZE} ARGS --format=sysv "${TARGET_ARTIFACT}"
 )
 
