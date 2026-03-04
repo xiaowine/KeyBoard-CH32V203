@@ -40,8 +40,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     // 1. 合并 24 位按键并取反（0变1表示按下）
     // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
     const uint32_t raw = (uint32_t)snapshot[0] |
-            (uint32_t)snapshot[1] << 8 |
-            (uint32_t)snapshot[2] << 16;
+                         (uint32_t)snapshot[1] << 8 |
+                         (uint32_t)snapshot[2] << 16;
     // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
     // 直接取反会导致变成全 1（误判为所有按键被按下）。
     // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
@@ -67,34 +67,52 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
         kb_heartbeat_counter = 0;
     }
 
-    // 3. 收集所有按下的 HID Usage ID
-    static uint8_t all_codes[8 * HC165_COUNT * MAX_CODE] = {0}; // 理论最大支持 24个按键 * 每键多码
-    uint8_t total_codes = 0;
-    uint8_t modifier_bits = 0; // 合并所有按下键的修饰位（标准 HID modifier mask）
+    // 3. 收集所有按下的 HID Usage ID（区分键盘与媒体）
+    static uint8_t kb_codes[MAX_POSSIBLE_CODES] = {0};
+    static uint16_t consumer_usages[MAX_POSSIBLE_CODES] = {0};
+    uint8_t kb_total = 0;
+    uint8_t consumer_total = 0;
+    uint8_t modifier_bits = 0; // 合并所有按下键的修饰位（仅键盘有效）
 
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
     uint32_t scan = keys;
     while (scan)
     {
         const uint32_t idx = get_bit_index(scan);
-        if (idx < 24)
+        if (idx < (8 * HC165_COUNT))
         {
-            const KeyMapping* m = &KEY_MAP[idx];
-            // 累积修饰位（若该物理键带修饰）
-            modifier_bits |= m->modifiers;
-            for (uint8_t i = 0; i < m->count; i++)
+            const KeyMapping *m = &KEY_MAP[idx];
+            if (m->type == KEY_TYPE_CONSUMER)
             {
-                if (total_codes < 48)
+                for (uint8_t i = 0; i < m->count; i++)
                 {
-                    all_codes[total_codes++] = m->codes[i];
+                    if (consumer_total < MAX_POSSIBLE_CODES)
+                    {
+                        consumer_usages[consumer_total++] = m->codes.ccodes[i];
+                    }
+                }
+            }
+            else
+            {
+                // 累积修饰位（若该物理键带修饰）
+                modifier_bits |= m->modifiers;
+                for (uint8_t i = 0; i < m->count; i++)
+                {
+                    if (kb_total < MAX_POSSIBLE_CODES)
+                    {
+                        kb_codes[kb_total++] = m->codes.kcodes[i];
+                    }
                 }
             }
         }
         scan &= scan - 1; // 清除最低位的 1
     }
 
-    /* 将上面收集到的 codes 发送出去；发送细节由 usb_endp 模块负责以减少拷贝 */
-    USBD_SendKeyboardReports(modifier_bits, all_codes, total_codes);
+    /* 将上面收集到的 codes 分别发送出去；分别使用键盘与媒体发送接口 */
+    /* 保留心跳行为：始终发送键盘快照以维持 host 同步 */
+    USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
+    /* 发送媒体报告（若没有媒体按键也会发送空报告以便释放之前的状态） */
+    USBD_SendConsumerReport(consumer_usages, consumer_total);
 
     // 更新 prev_keys 为本次快照的真实键位（注意上面位扫描使用了副本 scan）
     prev_keys = keys;

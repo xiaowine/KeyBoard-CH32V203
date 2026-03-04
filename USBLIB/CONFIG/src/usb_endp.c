@@ -138,23 +138,23 @@ uint8_t USBD_SendCustomData(uint8_t* pbuf, uint16_t len)
 uint8_t USBD_SendConsumerReport(const uint16_t* usages, uint8_t count)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_CONSUMER];
-    uint16_t report_len = 1; /* start with Report ID */
+    uint16_t report_len = 1 + 2 * 3; /* Report ID + 3 usages (fixed length expected by host) */
 
     if (count > 3)
         count = 3; /* descriptor supports up to 3 usages */
 
-    /* Report ID (1 byte) */
+    /* Clear the buffer (ensure unused slots are zero) and set Report ID (1 byte) */
+    memset(send_buffer, 0, sizeof(send_buffer));
     send_buffer[0] = 0x06; /* Report ID 6 for consumer */
 
     for (uint8_t i = 0; i < count; i++)
     {
         send_buffer[1 + i * 2] = (uint8_t)(usages[i] & 0xFF);
         send_buffer[1 + i * 2 + 1] = (uint8_t)((usages[i] >> 8) & 0xFF);
-        report_len += 2; /* each usage is 2 bytes (16-bit) */
     }
-
-    /* send only the actual report length (Report ID + usages) */
-    return USBD_ENDPx_DataUp(ENDP6, send_buffer, report_len);
+    PRINT("Sending Consumer Report: count=%d, report_len=%d\n", count, report_len);
+    /* send the full report length (pad unused usages with zeros) */
+    return USBD_ENDPx_DataUp(ENDP6, send_buffer, (uint16_t)report_len);
 }
 
 /**
