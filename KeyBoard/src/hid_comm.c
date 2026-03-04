@@ -27,7 +27,7 @@ static hid_comm_callback_t data_received_callback = NULL;
  *
  * @return  Status (0=success, 1=error)
  */
-uint8_t hid_comm_send(uint8_t *data, uint16_t len)
+uint8_t hid_comm_send(uint8_t* data, uint16_t len)
 {
     // Send via USB endpoint (Report ID will be automatically added)
     return USBD_SendCustomData(data, len);
@@ -43,7 +43,7 @@ uint8_t hid_comm_send(uint8_t *data, uint16_t len)
 void hid_comm_process(void)
 {
     uint16_t received_len = USBD_GetCustomData(rx_buffer, sizeof(rx_buffer));
-    uint8_t *data_ptr = rx_buffer;
+    uint8_t* data_ptr = rx_buffer;
     uint16_t data_len = received_len;
 
     if (received_len == 0)

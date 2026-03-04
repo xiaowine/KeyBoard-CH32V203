@@ -13,7 +13,7 @@
 #ifndef __USB_CONF_H
 #define __USB_CONF_H
 
-#define EP_NUM (6)
+#define EP_NUM (7)
 
 /* Buffer Description Table */
 /* buffer table base address */
@@ -33,6 +33,7 @@
 #define ENDP4_TXADDR (ENDP3_TXADDR + 0x10)
 #define ENDP5_TXADDR (ENDP4_TXADDR + 0x10)
 #define ENDP5_RXADDR (ENDP5_TXADDR + 0x40)
+#define ENDP6_TXADDR (ENDP5_RXADDR + 0x40)
 
 /* ISTR events */
 /* IMR_MSK */

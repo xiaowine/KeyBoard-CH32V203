@@ -33,14 +33,14 @@
 typedef enum
 {
     KEY_DEBOUNCE_IDLE = 0, /* 空闲（未按下） */
-    KEY_DEBOUNCE_PRESSED,  /* 按下确认 */
+    KEY_DEBOUNCE_PRESSED, /* 按下确认 */
 } key_debounce_state_e;
 
 /* 每键的消抖状态跟踪 */
 typedef struct
 {
     key_debounce_state_e state; /* 当前状态 */
-    uint8_t sample_count;       /* 连续采样计数（用于确认转移） */
+    uint8_t sample_count; /* 连续采样计数（用于确认转移） */
 } key_debounce_t;
 
 /* 过滤与四态管理接口 */

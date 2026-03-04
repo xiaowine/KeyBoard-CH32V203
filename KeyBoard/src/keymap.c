@@ -40,8 +40,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     // 1. 合并 24 位按键并取反（0变1表示按下）
     // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
     const uint32_t raw = (uint32_t)snapshot[0] |
-                         (uint32_t)snapshot[1] << 8 |
-                         (uint32_t)snapshot[2] << 16;
+            (uint32_t)snapshot[1] << 8 |
+            (uint32_t)snapshot[2] << 16;
     // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
     // 直接取反会导致变成全 1（误判为所有按键被按下）。
     // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
@@ -79,7 +79,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
         const uint32_t idx = get_bit_index(scan);
         if (idx < 24)
         {
-            const KeyMapping *m = &KEY_MAP[idx];
+            const KeyMapping* m = &KEY_MAP[idx];
             // 累积修饰位（若该物理键带修饰）
             modifier_bits |= m->modifiers;
             for (uint8_t i = 0; i < m->count; i++)

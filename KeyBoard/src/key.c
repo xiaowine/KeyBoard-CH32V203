@@ -11,8 +11,8 @@ static volatile uint8_t dma_transfer_complete_flag = 0;
 
 /* 3kHz 采样与过滤管理 */
 static uint8_t key_sample_buffer[KEY_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
-static uint8_t key_filtered_state[HC165_COUNT];                   /* 1ms 多数投票结果 */
-static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS];         /* 每键状态跟踪 */
+static uint8_t key_filtered_state[HC165_COUNT]; /* 1ms 多数投票结果 */
+static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS]; /* 每键状态跟踪 */
 
 void key_init(void)
 {
@@ -35,7 +35,7 @@ void key_init(void)
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
     DMA_InitTypeDef DMA_InitStructure = {0};
-    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&SPI1->DATAR;
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t) & SPI1->DATAR;
     DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)spi_dma_rx_buf;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
     DMA_InitStructure.DMA_BufferSize = HC165_COUNT;
@@ -100,8 +100,8 @@ void key_start_scan(void)
      */
 
     KEY_DISABLE_CLOCK(); /* 禁止时钟 */
-    KEY_LOAD_PL();       /* 加载并行输入 */
-    KEY_ENABLE_CLOCK();  /* 启用时钟 */
+    KEY_LOAD_PL(); /* 加载并行输入 */
+    KEY_ENABLE_CLOCK(); /* 启用时钟 */
 
     //  开启 DMA，开始传输
     DMA_Cmd(DMA1_Channel2, ENABLE);
@@ -166,11 +166,11 @@ void key_do_filter_and_update(void)
     /* 更新每键的四态状态机（连续 2 次确认转移） */
     for (uint8_t key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
     {
-        uint8_t byte_idx = key_idx >> 3;  /* key_idx / 8 */
+        uint8_t byte_idx = key_idx >> 3; /* key_idx / 8 */
         uint8_t bit_idx = key_idx & 0x07; /* key_idx % 8 */
         uint8_t key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
 
-        key_debounce_t *state = &key_debounce_state[key_idx];
+        key_debounce_t* state = &key_debounce_state[key_idx];
 
         switch (state->state)
         {

@@ -35,13 +35,13 @@ __attribute__((section(".ramfunc"))) void USB_LP_CAN1_RX0_IRQHandler(void)
 }
 
 /*******************************************************************************
- * @fn        Set_USBConfig
+ * @fn        Set_USB_Clock
  *
- * @brief     Set_USBConfig .
+ * @brief     Set_USB_Clock .
  *
  * @return    None
  */
-void Set_USBConfig()
+void Set_USB_Clock()
 {
 	RCC_ClocksTypeDef RCC_ClocksStatus = {0};
 	RCC_GetClocksFreq(&RCC_ClocksStatus);

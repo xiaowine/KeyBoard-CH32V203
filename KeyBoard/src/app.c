@@ -15,7 +15,6 @@ static uint8_t debug = 0;
 /* 子采样槽位管理（0 -> 1 -> 2 -> 0） */
 static uint8_t next_sample_slot = 0;
 static volatile uint8_t active_sample_slot = 0;
-
 /* 扫描超时保护（单位：TIM3 update tick） */
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 static volatile uint8_t scan_timeout_ticks = 0;
@@ -151,7 +150,7 @@ void app_init(void)
     }
 
     GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
-    Set_USBConfig();
+    Set_USB_Clock();
     USB_Init();
     USB_Interrupts_Config();
 
@@ -161,7 +160,7 @@ void app_init(void)
     PRINT("App Init OK!\r\n");
 }
 
- void app_run(void)
+void app_run(void)
 {
     hid_comm_process();
     switch (key_scan_state)
