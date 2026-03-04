@@ -2,32 +2,11 @@
 #include "key.h"
 #include "usb_endp.h"
 #include "utils.h"
-
-#define KB_GROUPS CEIL_DIV(8 * HC165_COUNT, 6)
-
-/*
- * keymap.c - 键盘按键映射与 HID 报告发送模块
- *
- * 概要：
- * 将来自 HC165 串行并行转换器的原始扫描数据转换为标准 USB HID 键盘报告并发送。
- *
- * 处理流程：
- *  1) 将 HC165 返回的字节合并为 24 位按键位掩码（按下位为 1）。
- *  2) 根据 KEY_MAP 将被按下的物理键索引映射为 HID Usage ID（每键可映射多个码）。
- *  3) 将所有要上报的码按每组最多 6 键进行分组，构造 HID 报告并通过对应端点发送。
- *
- * 要点：
- *  - 报告格式为 DEF_ENDP_SIZE_KB 字节： [modifiers, reserved, k1..k6]
- *  - 使用变化检测（prev_keys）避免重复发送；使用心跳（KB_HEARTBEAT_INTERVAL）定期重发以防同步丢失。
- *  - 按需发送：仅发送包含实际按键的分组，USBD_ENDPx_DataUp 调用完成后底层负责清理状态。
- *
- */
+#include <string.h>
+#include <stdbool.h>
 
 // 记录上一次合并的按键位掩码，用于检测扫描间的变化
 static uint32_t prev_keys = 0;
-
-// 可选心跳：每 N 次扫描重发一次完整快照（即使无变化），用于从主机/USB 丢包或重新枚举等边界情况恢复
-#define KB_HEARTBEAT_INTERVAL 500
 static uint16_t kb_heartbeat_counter = 0;
 
 /**
@@ -67,8 +46,13 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     }
 
     // 3. 收集所有按下的 HID Usage ID（区分键盘与媒体）
-    static uint8_t kb_codes[MAX_POSSIBLE_CODES] = {0};
-    static uint16_t consumer_usages[MAX_POSSIBLE_CODES] = {0};
+    /* 传统 boot 报告只需最多 6 个键；用小数组并去重以节省空间与避免重复 */
+    static uint8_t kb_codes[BOOT_KEY_MAX] = {0};
+    /* NKRO 位图（120 bits -> 15 bytes）在扫描时直接构建 */
+    uint8_t nkro_bitmap[15] = {0};
+    static uint8_t prev_nkro[15] = {0};
+    /* consumer usages 限定为最多 MAX_CODE（描述符支持 3 个） */
+    static uint16_t consumer_usages[MAX_CODE] = {0};
     uint8_t kb_total = 0;
     uint8_t consumer_total = 0;
     uint8_t modifier_bits = 0;      // 合并所有按下键的修饰位（仅键盘有效）
@@ -87,7 +71,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             {
                 for (uint8_t i = 0; i < m->count; i++)
                 {
-                    if (consumer_total < MAX_POSSIBLE_CODES)
+                    /* 只收集最多 MAX_CODE（通常为 3）个 consumer usages */
+                    if (consumer_total < MAX_CODE)
                     {
                         consumer_usages[consumer_total++] = m->codes.ccodes[i];
                     }
@@ -112,9 +97,30 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                 modifier_bits |= m->modifiers;
                 for (uint8_t i = 0; i < m->count; i++)
                 {
-                    if (kb_total < MAX_POSSIBLE_CODES)
+                    uint8_t code = m->codes.kcodes[i];
+                    /* 在收集阶段限制为 BOOT_KEY_MAX 并去重 */
+                    if (kb_total < BOOT_KEY_MAX)
                     {
-                        kb_codes[kb_total++] = m->codes.kcodes[i];
+                        bool found = false;
+                        for (uint8_t j = 0; j < kb_total; j++)
+                        {
+                            if (kb_codes[j] == code)
+                            {
+                                found = true;
+                                break;
+                            }
+                        }
+                        if (!found)
+                        {
+                            kb_codes[kb_total++] = code;
+                        }
+                    }
+                    /* 直接构建 NKRO 位图（仅处理 0..119） */
+                    if (code < 120)
+                    {
+                        uint8_t byte_idx = code / 8;
+                        uint8_t bit = (uint8_t)(1u << (code & 7));
+                        nkro_bitmap[byte_idx] |= bit;
                     }
                 }
             }
@@ -123,14 +129,29 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     }
 
     /* 将上面收集到的 codes 分别发送出去；分别使用键盘与媒体发送接口 */
-    /* 保留心跳行为：始终发送键盘快照以维持 host 同步 */
-    USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
-    /* 额外发送 NKRO 位图报文以支持全键无冲（覆盖 0..F24 等 120 键） */
-    USBD_SendNKROReport(kb_codes, kb_total);
-    /* 发送媒体报告（若没有媒体按键也会发送空报告以便释放之前的状态） */
-    USBD_SendConsumerReport(consumer_usages, consumer_total);
-    /* 发送鼠标报告（若有鼠标按键或滚轮动作） */
-    USBD_SendMouseReport(mouse_buttons_mask, mouse_wheel_sum);
+    /* 保留心跳行为：仅在有变更或心跳触发时发送 */
+    if (kb_total > 0 || modifier_bits != 0 || kb_heartbeat_counter == 0)
+    {
+        USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
+    }
+
+    /* 仅在 NKRO 位图与上次不同或心跳时发送 */
+    if (memcmp(nkro_bitmap, prev_nkro, sizeof(nkro_bitmap)) != 0 || kb_heartbeat_counter == 0)
+    {
+        USBD_SendNKROBitmap(nkro_bitmap);
+        memcpy(prev_nkro, nkro_bitmap, sizeof(nkro_bitmap));
+    }
+
+    if (consumer_total > 0 || kb_heartbeat_counter == 0)
+    { /* 发送媒体报告（若没有媒体按键也会发送空报告以便释放之前的状态） */
+
+        USBD_SendConsumerReport(consumer_usages, consumer_total);
+    }
+    if (mouse_buttons_mask != 0 || mouse_wheel_sum != 0 || kb_heartbeat_counter == 0)
+    {
+        /* 发送鼠标报告（若有鼠标按键或滚轮动作） */
+        USBD_SendMouseReport(mouse_buttons_mask, mouse_wheel_sum);
+    }
 
     // 更新 prev_keys 为本次快照的真实键位（注意上面位扫描使用了副本 scan）
     prev_keys = keys;

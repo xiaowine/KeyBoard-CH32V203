@@ -13,7 +13,8 @@ extern "C"
   uint8_t USBD_SendCustomData(const uint8_t *pbuf, uint16_t len);
   uint8_t USBD_SendConsumerReport(const uint16_t *usages, uint8_t count);
   uint8_t USBD_SendKeyboardReports(uint8_t modifiers, const uint8_t *codes, uint8_t total_codes);
-  uint8_t USBD_SendNKROReport(const uint8_t *codes, uint8_t total_codes);
+  // uint8_t USBD_SendNKROReport(const uint8_t *codes, uint8_t total_codes);
+  uint8_t USBD_SendNKROBitmap(const uint8_t *bitmap);
   uint8_t USBD_SendMouseReport(uint8_t buttons_mask, int16_t wheel);
 
 #ifdef __cplusplus

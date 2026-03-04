@@ -196,43 +196,58 @@ uint8_t USBD_SendKeyboardReports(const uint8_t modifiers, const uint8_t *codes, 
     /* Standard boot-compatible 6-key rollover report sent on ENDP1 */
     send_buffer[0] = modifiers;
     send_buffer[1] = 0; /* reserved */
-    /* Clear six key slots */
-    for (uint8_t i = 0; i < 6; i++)
-    {
-        send_buffer[2 + i] = 0;
-    }
 
-    if (total_codes > 0)
+    /* Clear the six key slots in one call then copy up to 6 codes */
+    memset(&send_buffer[2], 0, 6);
+    const uint8_t to_copy = (uint8_t)(total_codes > 6 ? 6 : total_codes);
+    if (to_copy)
     {
-        const uint8_t to_copy = (uint8_t)(total_codes > 6 ? 6 : total_codes);
         memcpy(&send_buffer[2], codes, to_copy);
     }
 
     return USBD_ENDPx_DataUp(ENDP1, send_buffer, DEF_ENDP_SIZE_KB);
 }
 
+// /**
+//  * @fn      USBD_SendNKROReport
+//  * @brief   Send bitmap NKRO report via ENDP2.
+//  *          Report format: [ReportID=2][15 bytes bitmap covering usages 0..119]
+//  */
+// uint8_t USBD_SendNKROReport(const uint8_t *codes, uint8_t total_codes)
+// {
+//     static uint8_t send_buffer[DEF_ENDP_SIZE_NKRO];
+//     /* Clear buffer and set Report ID */
+//     memset(send_buffer, 0, sizeof(send_buffer));
+//     send_buffer[0] = 0x02; /* Report ID 2 */
+
+//     /* Bitmap payload starts at offset 1, covers 120 bits (15 bytes) */
+//     for (uint8_t i = 0; i < total_codes; i++)
+//     {
+//         uint8_t code = codes[i];
+//         if (code >= 120)
+//             continue; /* ignore out-of-range usages */
+//         uint8_t byte_idx = 1 + (code / 8);
+//         uint8_t bit = (uint8_t)(1u << (code & 7));
+//         send_buffer[byte_idx] |= bit;
+//     }
+
+//     return USBD_ENDPx_DataUp(ENDP2, send_buffer, DEF_ENDP_SIZE_NKRO);
+// }
+
 /**
- * @fn      USBD_SendNKROReport
- * @brief   Send bitmap NKRO report via ENDP2.
+ * @fn      USBD_SendNKROBitmap
+ * @brief   Send NKRO bitmap report via ENDP2.
  *          Report format: [ReportID=2][15 bytes bitmap covering usages 0..119]
  */
-uint8_t USBD_SendNKROReport(const uint8_t *codes, uint8_t total_codes)
+uint8_t USBD_SendNKROBitmap(const uint8_t *bitmap)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_NKRO];
     /* Clear buffer and set Report ID */
     memset(send_buffer, 0, sizeof(send_buffer));
     send_buffer[0] = 0x02; /* Report ID 2 */
 
-    /* Bitmap payload starts at offset 1, covers 120 bits (15 bytes) */
-    for (uint8_t i = 0; i < total_codes; i++)
-    {
-        uint8_t code = codes[i];
-        if (code >= 120)
-            continue; /* ignore out-of-range usages */
-        uint8_t byte_idx = 1 + (code / 8);
-        uint8_t bit = (uint8_t)(1u << (code & 7));
-        send_buffer[byte_idx] |= bit;
-    }
+    /* Copy 15-byte bitmap into payload (offset 1) */
+    memcpy(&send_buffer[1], bitmap, 15);
 
     return USBD_ENDPx_DataUp(ENDP2, send_buffer, DEF_ENDP_SIZE_NKRO);
 }

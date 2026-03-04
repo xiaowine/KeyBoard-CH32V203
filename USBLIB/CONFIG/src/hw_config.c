@@ -76,7 +76,7 @@ void Set_USB_Clock()
 void Enter_LowPowerMode(void)
 {
 	bDeviceState = SUSPENDED;
-	PRINT("usb enter low power mode\r\n");
+	// PRINT("usb enter low power mode\r\n");
 	USBD_Sleep_Status |= 0x02;
 	if (USBD_Sleep_Status == 0x03)
 	{
@@ -94,7 +94,7 @@ void Enter_LowPowerMode(void)
 void Leave_LowPowerMode(void)
 {
 	DEVICE_INFO *pInfo = &Device_Info;
-	PRINT("usb leave low power mode\r\n");
+	// PRINT("usb leave low power mode\r\n");
 	USBD_Sleep_Status &= ~0x02;
 	if (pInfo->Current_Configuration != 0)
 		bDeviceState = CONFIGURED;
