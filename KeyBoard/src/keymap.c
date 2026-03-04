@@ -1,6 +1,5 @@
 #include "keymap.h"
 #include "key.h"
-#include "usb_desc.h"
 #include "usb_endp.h"
 #include "utils.h"
 
@@ -72,7 +71,9 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     static uint16_t consumer_usages[MAX_POSSIBLE_CODES] = {0};
     uint8_t kb_total = 0;
     uint8_t consumer_total = 0;
-    uint8_t modifier_bits = 0; // 合并所有按下键的修饰位（仅键盘有效）
+    uint8_t modifier_bits = 0;      // 合并所有按下键的修饰位（仅键盘有效）
+    uint8_t mouse_buttons_mask = 0; /* bits 0..4 */
+    int16_t mouse_wheel_sum = 0;
 
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
     uint32_t scan = keys;
@@ -91,6 +92,19 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                         consumer_usages[consumer_total++] = m->codes.ccodes[i];
                     }
                 }
+            }
+            else if (m->type == KEY_TYPE_MOUSE_BUTTON)
+            {
+                /* 鼠标按钮映射：累积按钮掩码（每个映射可包含多个按钮掩码） */
+                for (uint8_t i = 0; i < m->count; i++)
+                {
+                    mouse_buttons_mask |= (m->codes.mouse_buttons[i] & 0x1F);
+                }
+            }
+            else if (m->type == KEY_TYPE_MOUSE_WHEEL)
+            {
+                /* 鼠标滚轮映射：累积滚轮增量 */
+                mouse_wheel_sum += m->codes.mouse_wheel;
             }
             else
             {
@@ -115,6 +129,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     USBD_SendNKROReport(kb_codes, kb_total);
     /* 发送媒体报告（若没有媒体按键也会发送空报告以便释放之前的状态） */
     USBD_SendConsumerReport(consumer_usages, consumer_total);
+    /* 发送鼠标报告（若有鼠标按键或滚轮动作） */
+    USBD_SendMouseReport(mouse_buttons_mask, mouse_wheel_sum);
 
     // 更新 prev_keys 为本次快照的真实键位（注意上面位扫描使用了副本 scan）
     prev_keys = keys;

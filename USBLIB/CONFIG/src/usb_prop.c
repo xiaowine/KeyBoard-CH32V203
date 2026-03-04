@@ -73,20 +73,22 @@ ONE_DESCRIPTOR String_Descriptor[4] =
         {(uint8_t *)USBD_StringProduct, USBD_SIZE_STRING_PRODUCT},
         {(uint8_t *)USBD_StringSerial, USBD_SIZE_STRING_SERIAL}};
 
-ONE_DESCRIPTOR Report_Descriptor[4] =
+ONE_DESCRIPTOR Report_Descriptor[5] =
     {
         {(uint8_t *)USBD_KeyRepDesc, USBD_SIZE_REPORT_DESC_KB},
         {(uint8_t *)USBD_NKRORepDesc, USBD_SIZE_REPORT_DESC_NKRO},
         {(uint8_t *)USBD_CustomRepDesc, USBD_SIZE_REPORT_DESC_CUSTOM},
         {(uint8_t *)USBD_ConsumerRepDesc, USBD_SIZE_REPORT_DESC_CONSUMER},
+        {(uint8_t *)USBD_MouseRepDesc, USBD_SIZE_REPORT_DESC_MOUSE},
 };
 
-ONE_DESCRIPTOR Hid_Descriptor[4] =
+ONE_DESCRIPTOR Hid_Descriptor[5] =
     {
         {(uint8_t *)&USBD_ConfigDescriptor[18], 0x09},  /* Standard Keyboard HID */
         {(uint8_t *)&USBD_ConfigDescriptor[43], 0x09},  /* NKRO HID */
         {(uint8_t *)&USBD_ConfigDescriptor[68], 0x09},  /* Custom HID */
         {(uint8_t *)&USBD_ConfigDescriptor[100], 0x09}, /* Consumer HID */
+        {(uint8_t *)&USBD_ConfigDescriptor[125], 0x09}, /* Mouse HID */
 };
 
 /*********************************************************************
@@ -239,6 +241,13 @@ void USBD_Reset(void)
     _ClearDTOG_TX(ENDP4);
     _ClearDTOG_RX(ENDP4);
 
+    /* Initialize Mouse endpoint on ENDP5 (IN, Boot Mouse) */
+    SetEPType(ENDP5, EP_INTERRUPT);
+    SetEPTxAddr(ENDP5, ENDP5_TXADDR);
+    SetEPTxStatus(ENDP5, EP_TX_NAK);
+    _ClearDTOG_TX(ENDP5);
+    _ClearDTOG_RX(ENDP5);
+
     SetDeviceAddress(0);
 
     {
@@ -315,7 +324,7 @@ uint8_t *USBD_GetStringDescriptor(uint16_t Length)
 uint8_t *USBD_GetReportDescriptor(uint16_t Length)
 {
     uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-    if (wIndex0 > 3)
+    if (wIndex0 > 4)
     {
         return NULL;
     }
@@ -337,7 +346,7 @@ uint8_t *USBD_GetReportDescriptor(uint16_t Length)
 uint8_t *USBD_GetHidDescriptor(uint16_t Length)
 {
     uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-    if (wIndex0 > 3)
+    if (wIndex0 > 4)
     {
         return NULL;
     }
@@ -364,7 +373,7 @@ RESULT USBD_Get_Interface_Setting(uint8_t Interface, uint8_t AlternateSetting)
     {
         return USB_UNSUPPORT;
     }
-    else if (Interface > 3)
+    else if (Interface > 4)
     {
         return USB_UNSUPPORT;
     }
@@ -466,7 +475,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
     {
         if (Request_No == HID_SET_IDLE)
         {
-            if (wIndex0 > 3)
+            if (wIndex0 > 4)
             {
                 return USB_UNSUPPORT;
             }
@@ -477,7 +486,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
         }
         else if (Request_No == HID_SET_PROTOCOL)
         {
-            if (wIndex0 > 3)
+            if (wIndex0 > 4)
             {
                 return USB_UNSUPPORT;
             }
@@ -506,7 +515,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
 uint8_t *HID_Set_Report(uint16_t Length)
 {
     uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-    if (wIndex0 > 3)
+    if (wIndex0 > 4)
     {
         return NULL;
     }
@@ -518,7 +527,7 @@ uint8_t *HID_Set_Report(uint16_t Length)
 
 /*********************************************************************
  * @fn      HID_Get_Idle.
- *
+ *b
  * @brief   HID Save Report Data.
  *
  * @param
@@ -528,7 +537,7 @@ uint8_t *HID_Set_Report(uint16_t Length)
 uint8_t *HID_Get_Idle(uint16_t Length)
 {
     uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-    if (wIndex0 > 3)
+    if (wIndex0 > 4)
     {
         return NULL;
     }
@@ -550,7 +559,7 @@ uint8_t *HID_Get_Idle(uint16_t Length)
 uint8_t *HID_Get_Protocol(uint16_t Length)
 {
     uint8_t wIndex0 = pInformation->USBwIndexs.bw.bb0;
-    if (wIndex0 > 3)
+    if (wIndex0 > 4)
     {
         return NULL;
     }

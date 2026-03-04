@@ -34,6 +34,8 @@
 #define ENDP3_TXADDR (ENDP2_TXADDR + 0x10)
 #define ENDP3_RXADDR (ENDP3_TXADDR + 0x40)
 #define ENDP4_TXADDR (ENDP3_RXADDR + 0x40)
+/* ENDP5: Mouse IN endpoint (allocated after ENDP4_TXADDR) */
+#define ENDP5_TXADDR (ENDP4_TXADDR + 0x10)
 
 /* ISTR events */
 /* IMR_MSK */

@@ -29,9 +29,11 @@ extern "C"
 #define DEF_USBD_UEP0_SIZE 64
 
 #define USBD_SIZE_DEVICE_DESC 18
-#define USBD_SIZE_CONFIG_DESC 116
+#define USBD_SIZE_CONFIG_DESC 141
 
 #define DEF_ENDP_SIZE_KB 8
+#define DEF_ENDP_SIZE_MOUSE 8
+#define USBD_SIZE_REPORT_DESC_MOUSE 62
 #define USBD_SIZE_REPORT_DESC_KB 62
 #define DEF_ENDP_SIZE_CUSTOM 32
 #define DEF_ENDP_SIZE_NKRO 16
@@ -59,6 +61,7 @@ extern "C"
   extern const uint8_t USBD_CustomRepDesc[USBD_SIZE_REPORT_DESC_CUSTOM];
   extern const uint8_t USBD_NKRORepDesc[USBD_SIZE_REPORT_DESC_NKRO];
   extern const uint8_t USBD_ConsumerRepDesc[USBD_SIZE_REPORT_DESC_CONSUMER];
+  extern const uint8_t USBD_MouseRepDesc[USBD_SIZE_REPORT_DESC_MOUSE];
 
 #ifdef __cplusplus
 }

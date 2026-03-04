@@ -159,6 +159,30 @@ uint8_t USBD_SendConsumerReport(const uint16_t *usages, uint8_t count)
 }
 
 /**
+ * @fn      USBD_SendMouseReport
+ * @brief   Send Boot Mouse report via ENDP5 IN
+ */
+uint8_t USBD_SendMouseReport(uint8_t buttons_mask, int16_t wheel)
+{
+    uint8_t buf[DEF_ENDP_SIZE_MOUSE];
+    uint16_t send_len = 4; /* boot/report 4-byte format */
+
+    memset(buf, 0, sizeof(buf));
+
+    /* buttons: lower 5 bits used */
+    buf[0] = buttons_mask & 0x1F;
+
+    /* clamp wheel to signed 8-bit range */
+    if (wheel > 127)
+        wheel = 127;
+    if (wheel < -127)
+        wheel = -127;
+    buf[3] = (uint8_t)((int8_t)wheel);
+
+    return USBD_ENDPx_DataUp(ENDP5, buf, send_len);
+}
+
+/**
  * @fn      USBD_SendKeyboardReports
  * @brief   Pack and send keyboard HID reports (6-key rollover) across endpoints.
  *
