@@ -1,4 +1,6 @@
 #include "app.h"
+
+#include "encode.h"
 #include "key.h"
 #include "usb_lib.h"
 #include "usb_desc.h"
@@ -19,70 +21,15 @@ static volatile uint8_t active_sample_slot = 0;
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 static volatile uint8_t scan_timeout_ticks = 0;
 
-void my_hid_comm_callback(uint8_t* data, uint16_t len);
+void my_hid_comm_callback(uint8_t *data, uint16_t len);
 
 void app_init(void)
 {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
-    // IO 初始化
-    {
-        RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 
-        GPIO_InitTypeDef GPIO_InitStructure = {0};
-        GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-
-        GPIO_InitStructure.GPIO_Pin = ENCODE_A | ENCODE_B;
-        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IN_FLOATING;
-        GPIO_Init(ENCODE_PORT, &GPIO_InitStructure);
-
-        GPIO_InitStructure.GPIO_Pin = KEY_CE | KEY_PL;
-        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-        GPIO_Init(KEY_PORT, &GPIO_InitStructure);
-        GPIO_SetBits(KEY_PORT, KEY_CE | KEY_PL);
-
-        GPIO_InitStructure.GPIO_Pin = KEY_MISO;
-        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-        GPIO_Init(KEY_PORT, &GPIO_InitStructure);
-
-        GPIO_InitStructure.GPIO_Pin = KEY_CP;
-        GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-        GPIO_Init(KEY_PORT, &GPIO_InitStructure);
-    }
-
-#pragma region
     // 编码器初始化（TIM）
-    // {
-    //     RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-
-    //  TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
-    //  TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
-    //  TIM_TimeBaseStructure.TIM_Prescaler = 0x0;
-    //  TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
-    //  TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-    //  TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    //  TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
-
-    //  TIM_EncoderInterfaceConfig(TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
-
-    //  TIM_ICInitTypeDef TIM_ICInitStructure;
-    //  TIM_ICStructInit(&TIM_ICInitStructure);
-    //  TIM_ICInitStructure.TIM_ICFilter = 10;
-    //  TIM_ICInit(TIM2, &TIM_ICInitStructure);
-
-    //  NVIC_InitTypeDef NVIC_InitStructure;
-    //  NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-    //  NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    //  NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-    //  NVIC_InitStructure.NVIC_IRQChannelSubPriority = 0;
-    //  NVIC_Init(&NVIC_InitStructure);
-
-    //  TIM_ClearFlag(TIM2, TIM_FLAG_Update);
-    //  TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
-    //  TIM_SetCounter(TIM2, (TIM_TimeBaseStructure.TIM_Period + 1) / 2);
-    //  TIM_Cmd(TIM2, ENABLE);
-    // }
-#pragma endregion
-
+    encode_init();
     /* 键盘模块初始化：配置 SPI + DMA 以读取 74HC165 */
     key_init();
 
@@ -226,8 +173,8 @@ void app_run(void)
             }
             key_pressed_count = 0;
         }
-        // // output_data((const uint8_t *)last_snapshot);
-        // hid_comm_send((uint8_t *)last_snapshot, HC165_COUNT);
+        // output_data((const uint8_t *)last_snapshot);
+        // hid_comm_send((uint8_t *)last_snapshot, HjjjjjjjjjjjjjC165_COUNT);
     }
 }
 
@@ -263,7 +210,7 @@ RAM INTF void TIM4_IRQHandler(void)
     }
 }
 
-void my_hid_comm_callback(uint8_t* data, uint16_t len)
+void my_hid_comm_callback(uint8_t *data, uint16_t len)
 {
     PRINT("App: Received %d bytes from HID comm\r\n", len);
     // 这里可以添加对接收到的数据的处理逻辑

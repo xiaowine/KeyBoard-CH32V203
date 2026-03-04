@@ -45,7 +45,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x01,                       // bConfigurationValue
     0x00,                       // iConfiguration
     0xA0,                       // bmAttributes: Bus Powered; Remote Wakeup
-    0x32,                       // MaxPower: 100mA
+    0xFA,                       // MaxPower: 500mA
 
     /* Interface Descriptor (Standard Keyboard) */
     0x09, // bLength

@@ -65,10 +65,12 @@ void USBD_EP_OUT_Handler(uint8_t endp)
  * @param   endp - endpoint num.
  *          *pbuf - A pointer points to data.
  *          len - data length to transmit.
+ * @param pbuf - pointer to data buffer to send
+ * @param len
  *
  * @return  data up status.
  */
-uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len)
+uint8_t USBD_ENDPx_DataUp(const uint8_t endp, uint8_t *pbuf, uint16_t len)
 {
     if (endp < 1 || endp > EP_NUM)
     {
@@ -91,12 +93,12 @@ uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len)
  *
  * @brief  Get the custom data received from EP5_OUT
  *
- * @param   *pbuf - pointer to data buffer.
- *          *len - pointer to length variable.
+ * @param pbuf pointer to data buffer.
+ * @param max_len maximum length of data to copy.
  *
  * @return  Received data length.
  */
-uint16_t USBD_GetCustomData(uint8_t *pbuf, uint16_t max_len)
+uint16_t USBD_GetCustomData(uint8_t *pbuf, const uint16_t max_len)
 {
     const uint16_t copy_len = (USB_Rx_Cnt > max_len) ? max_len : USB_Rx_Cnt;
     if (copy_len > 0)
@@ -112,12 +114,12 @@ uint16_t USBD_GetCustomData(uint8_t *pbuf, uint16_t max_len)
  *
  * @brief  Send custom data via EP5_IN
  *
- * @param   *pbuf - pointer to data buffer.
- *          len - data length.
+ * @param pbuf pointer to data buffer to send.
+ * @param len length of data to send.
  *
  * @return  Send status.
  */
-uint8_t USBD_SendCustomData(uint8_t *pbuf, uint16_t len)
+uint8_t USBD_SendCustomData(const uint8_t *pbuf, uint16_t len)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_CUSTOM];
 
@@ -150,9 +152,8 @@ uint8_t USBD_SendConsumerReport(const uint16_t *usages, uint8_t count)
     for (uint8_t i = 0; i < count; i++)
     {
         send_buffer[1 + i * 2] = (uint8_t)(usages[i] & 0xFF);
-        send_buffer[1 + i * 2 + 1] = (uint8_t)((usages[i] >> 8) & 0xFF);
+        send_buffer[1 + i * 2 + 1] = (uint8_t)(usages[i] >> 8 & 0xFF);
     }
-    PRINT("Sending Consumer Report: count=%d, report_len=%d\n", count, report_len);
     /* send the full report length (pad unused usages with zeros) */
     return USBD_ENDPx_DataUp(ENDP4, send_buffer, (uint16_t)report_len);
 }

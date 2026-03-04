@@ -7,9 +7,6 @@
 #define KEY_CP GPIO_Pin_5   // 连接到74HC165的CP 时钟
 #define KEY_MISO GPIO_Pin_6 // 连接到74HC165的Q7 输出
 #define KEY_PORT GPIOA
-#define ENCODE_A GPIO_Pin_0
-#define ENCODE_B GPIO_Pin_1
-#define ENCODE_PORT GPIOA
 
 #define KEY_DISABLE_CLOCK() GPIO_SetBits(KEY_PORT, KEY_CE)
 #define KEY_ENABLE_CLOCK() GPIO_ResetBits(KEY_PORT, KEY_CE)
@@ -33,14 +30,14 @@
 typedef enum
 {
     KEY_DEBOUNCE_IDLE = 0, /* 空闲（未按下） */
-    KEY_DEBOUNCE_PRESSED, /* 按下确认 */
+    KEY_DEBOUNCE_PRESSED,  /* 按下确认 */
 } key_debounce_state_e;
 
 /* 每键的消抖状态跟踪 */
 typedef struct
 {
     key_debounce_state_e state; /* 当前状态 */
-    uint8_t sample_count; /* 连续采样计数（用于确认转移） */
+    uint8_t sample_count;       /* 连续采样计数（用于确认转移） */
 } key_debounce_t;
 
 /* 过滤与四态管理接口 */
