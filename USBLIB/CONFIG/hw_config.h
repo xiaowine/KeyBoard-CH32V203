@@ -1,5 +1,5 @@
 /********************************** (C) COPYRIGHT *******************************
- * File Name          : hw_config.h
+* File Name          : hw_config.h
  * Author             : WCH
  * Version            : V1.0.0
  * Date               : 2021/08/08

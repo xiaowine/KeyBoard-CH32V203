@@ -193,8 +193,6 @@ void USBD_init(void)
     USB_SIL_Init();
     bDeviceState = UNCONNECTED;
 
-    USB_Port_Set(DISABLE, DISABLE);
-    Delay_Ms(20);
     USB_Port_Set(ENABLE, ENABLE);
 }
 
