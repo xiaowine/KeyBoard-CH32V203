@@ -23,9 +23,9 @@
 				"name": "*.wvproj"
 			},
 			{
-				"name": "CMakeLists.txt",
 				"parentLogicPath": "",
-				"type": "file"
+				"type": "file",
+				"name": "CMakeLists.txt"
 			}
 		],
 		"projectName": "KeyBoard",
@@ -136,7 +136,7 @@
 							"${project}/User",
 							"${project}/Peripheral/inc",
 							"${project}/KeyBoard/inc",
-							"${project}/USBLIB/CONFIG",
+							"${project}/USBLIB/CONFIG/inc",
 							"${project}/USBLIB/USB-Driver/inc"
 						],
 						"include_system_paths": [],

@@ -59,7 +59,7 @@ add_compile_options(-fmacro-prefix-map=${CMAKE_SOURCE_DIR}=..)
 file(GLOB SRC_FILES
         "${CMAKE_CURRENT_SOURCE_DIR}/User/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/src/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG/*.c"
+        "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG/src/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/src/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/src/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/Debug/*.c"
@@ -71,13 +71,23 @@ list(APPEND SRC_FILES
 )
 set(COMMON_RISCV_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g")
 
-set(COMMON_INCLUDE_DIRS " -I\"${CMAKE_CURRENT_SOURCE_DIR}/Debug\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/Core\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/User\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/inc\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG\" -I\"${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/inc\"")
-
-set(CMAKE_C_FLAGS "${COMMON_RISCV_FLAGS}${COMMON_INCLUDE_DIRS} -std=gnu11")
+set(CMAKE_C_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu11")
 set(CMAKE_CXX_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu++11 -fabi-version=0")
-set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -I\"${CMAKE_CURRENT_SOURCE_DIR}/Startup\" -x assembler-with-cpp")
+set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -x assembler-with-cpp")
 
 add_executable("${TARGET_ARTIFACT}" ${SRC_FILES})
+
+# Use target include directories instead of embedding -I flags into CFLAGS
+target_include_directories("${TARGET_ARTIFACT}" PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/Debug"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Core"
+        "${CMAKE_CURRENT_SOURCE_DIR}/User"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG/inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/inc"
+        "${CMAKE_CURRENT_SOURCE_DIR}/Startup"
+)
 
 set_target_properties("${TARGET_ARTIFACT}" PROPERTIES LINK_FLAGS "${COMMON_RISCV_FLAGS} -T \"${CMAKE_CURRENT_SOURCE_DIR}/Ld/Link.ld\" -nostartfiles -Xlinker --gc-sections -Xlinker --print-memory-usage -Wl,-Map,\"${MAP_FILE}\" --specs=nano.specs --specs=nosys.specs -o \"${TARGET_ARTIFACT}\"")
 
