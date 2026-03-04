@@ -28,12 +28,12 @@
 /* EP1  */
 /* tx buffer base address */
 #define ENDP1_TXADDR (0xC0)
+/* ENDP2: NKRO (16 bytes), kept aligned to 0x10 boundary */
 #define ENDP2_TXADDR (ENDP1_TXADDR + 0x10)
+/* ENDP3/ENDP4 will be used for Custom (3) and Consumer (4) */
 #define ENDP3_TXADDR (ENDP2_TXADDR + 0x10)
-#define ENDP4_TXADDR (ENDP3_TXADDR + 0x10)
-#define ENDP5_TXADDR (ENDP4_TXADDR + 0x10)
-#define ENDP5_RXADDR (ENDP5_TXADDR + 0x40)
-#define ENDP6_TXADDR (ENDP5_RXADDR + 0x40)
+#define ENDP3_RXADDR (ENDP3_TXADDR + 0x40)
+#define ENDP4_TXADDR (ENDP3_RXADDR + 0x40)
 
 /* ISTR events */
 /* IMR_MSK */

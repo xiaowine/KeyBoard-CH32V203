@@ -111,6 +111,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     /* 将上面收集到的 codes 分别发送出去；分别使用键盘与媒体发送接口 */
     /* 保留心跳行为：始终发送键盘快照以维持 host 同步 */
     USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
+    /* 额外发送 NKRO 位图报文以支持全键无冲（覆盖 0..F24 等 120 键） */
+    USBD_SendNKROReport(kb_codes, kb_total);
     /* 发送媒体报告（若没有媒体按键也会发送空报告以便释放之前的状态） */
     USBD_SendConsumerReport(consumer_usages, consumer_total);
 

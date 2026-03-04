@@ -45,13 +45,13 @@ void USBD_EP_IN_Handler(uint8_t endp)
 /* Common OUT handler that dispatches based on endpoint number */
 void USBD_EP_OUT_Handler(uint8_t endp)
 {
-    if (endp == ENDP5)
+    if (endp == ENDP3)
     {
-        /* Direct read from PMA to application buffer, no intermediate copy */
-        USB_Rx_Cnt = USB_SIL_Read(EP5_OUT, (uint8_t*)USBD_HId_Comm_Data_Buffer);
+        /* Direct read from PMA to application buffer for custom OUT endpoint */
+        USB_Rx_Cnt = USB_SIL_Read(EP3_OUT, (uint8_t *)USBD_HId_Comm_Data_Buffer);
 
         /* Re-enable RX for next reception */
-        SetEPRxValid(ENDP5);
+        SetEPRxValid(ENDP3);
     }
 }
 
@@ -68,7 +68,7 @@ void USBD_EP_OUT_Handler(uint8_t endp)
  *
  * @return  data up status.
  */
-uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t* pbuf, uint16_t len)
+uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t *pbuf, uint16_t len)
 {
     if (endp < 1 || endp > EP_NUM)
     {
@@ -96,12 +96,12 @@ uint8_t USBD_ENDPx_DataUp(uint8_t endp, uint8_t* pbuf, uint16_t len)
  *
  * @return  Received data length.
  */
-uint16_t USBD_GetCustomData(uint8_t* pbuf, uint16_t max_len)
+uint16_t USBD_GetCustomData(uint8_t *pbuf, uint16_t max_len)
 {
     const uint16_t copy_len = (USB_Rx_Cnt > max_len) ? max_len : USB_Rx_Cnt;
     if (copy_len > 0)
     {
-        memcpy(pbuf, (uint8_t*)USBD_HId_Comm_Data_Buffer, copy_len);
+        memcpy(pbuf, (uint8_t *)USBD_HId_Comm_Data_Buffer, copy_len);
         USB_Rx_Cnt = 0; // Clear after reading
     }
     return copy_len;
@@ -117,7 +117,7 @@ uint16_t USBD_GetCustomData(uint8_t* pbuf, uint16_t max_len)
  *
  * @return  Send status.
  */
-uint8_t USBD_SendCustomData(uint8_t* pbuf, uint16_t len)
+uint8_t USBD_SendCustomData(uint8_t *pbuf, uint16_t len)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_CUSTOM];
 
@@ -128,14 +128,14 @@ uint8_t USBD_SendCustomData(uint8_t* pbuf, uint16_t len)
     send_buffer[0] = 0x01; // Report ID 1 for input
     memcpy(&send_buffer[1], pbuf, len);
 
-    return USBD_ENDPx_DataUp(ENDP5, send_buffer, DEF_ENDP_SIZE_CUSTOM);
+    return USBD_ENDPx_DataUp(ENDP3, send_buffer, DEF_ENDP_SIZE_CUSTOM);
 }
 
 /**
  * @fn      USBD_SendConsumerReport
  * @brief   Send Consumer Control report via EP6 IN
  */
-uint8_t USBD_SendConsumerReport(const uint16_t* usages, uint8_t count)
+uint8_t USBD_SendConsumerReport(const uint16_t *usages, uint8_t count)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_CONSUMER];
     uint16_t report_len = 1 + 2 * 3; /* Report ID + 3 usages (fixed length expected by host) */
@@ -154,7 +154,7 @@ uint8_t USBD_SendConsumerReport(const uint16_t* usages, uint8_t count)
     }
     PRINT("Sending Consumer Report: count=%d, report_len=%d\n", count, report_len);
     /* send the full report length (pad unused usages with zeros) */
-    return USBD_ENDPx_DataUp(ENDP6, send_buffer, (uint16_t)report_len);
+    return USBD_ENDPx_DataUp(ENDP4, send_buffer, (uint16_t)report_len);
 }
 
 /**
@@ -165,36 +165,49 @@ uint8_t USBD_SendConsumerReport(const uint16_t* usages, uint8_t count)
  * [modifiers, reserved, k1..k6]
  * It sends up to 6 usages per report to endpoints starting at ENDP1.
  */
-uint8_t USBD_SendKeyboardReports(const uint8_t modifiers, const uint8_t* codes, const uint8_t total_codes)
+uint8_t USBD_SendKeyboardReports(const uint8_t modifiers, const uint8_t *codes, const uint8_t total_codes)
 {
     static uint8_t send_buffer[DEF_ENDP_SIZE_KB];
-
-    const uint8_t needed_groups = total_codes > 0 ? (total_codes + 5) / 6 : 1;
-
-    for (uint8_t grp = 0; grp < needed_groups; grp++)
+    /* Standard boot-compatible 6-key rollover report sent on ENDP1 */
+    send_buffer[0] = modifiers;
+    send_buffer[1] = 0; /* reserved */
+    /* Clear six key slots */
+    for (uint8_t i = 0; i < 6; i++)
     {
-        const uint8_t offset = grp * 6;
-
-        /* Prepare header */
-        send_buffer[0] = modifiers;
-        send_buffer[1] = 0; /* reserved */
-
-        /* Clear six key slots */
-        for (uint8_t i = 0; i < 6; i++)
-        {
-            send_buffer[2 + i] = 0;
-        }
-
-        if (offset < total_codes)
-        {
-            const uint8_t to_copy = (uint8_t)(total_codes - offset > 6 ? 6 : total_codes - offset);
-            /* Copy only the required key bytes (minimal memory ops) */
-            memcpy(&send_buffer[2], &codes[offset], to_copy);
-        }
-
-        /* Send using existing low-level function; map grp 0 -> endpoint 1 */
-        USBD_ENDPx_DataUp((uint8_t)(grp + 1), send_buffer, DEF_ENDP_SIZE_KB);
+        send_buffer[2 + i] = 0;
     }
 
-    return USB_SUCCESS;
+    if (total_codes > 0)
+    {
+        const uint8_t to_copy = (uint8_t)(total_codes > 6 ? 6 : total_codes);
+        memcpy(&send_buffer[2], codes, to_copy);
+    }
+
+    return USBD_ENDPx_DataUp(ENDP1, send_buffer, DEF_ENDP_SIZE_KB);
+}
+
+/**
+ * @fn      USBD_SendNKROReport
+ * @brief   Send bitmap NKRO report via ENDP2.
+ *          Report format: [ReportID=2][15 bytes bitmap covering usages 0..119]
+ */
+uint8_t USBD_SendNKROReport(const uint8_t *codes, uint8_t total_codes)
+{
+    static uint8_t send_buffer[DEF_ENDP_SIZE_NKRO];
+    /* Clear buffer and set Report ID */
+    memset(send_buffer, 0, sizeof(send_buffer));
+    send_buffer[0] = 0x02; /* Report ID 2 */
+
+    /* Bitmap payload starts at offset 1, covers 120 bits (15 bytes) */
+    for (uint8_t i = 0; i < total_codes; i++)
+    {
+        uint8_t code = codes[i];
+        if (code >= 120)
+            continue; /* ignore out-of-range usages */
+        uint8_t byte_idx = 1 + (code / 8);
+        uint8_t bit = (uint8_t)(1u << (code & 7));
+        send_buffer[byte_idx] |= bit;
+    }
+
+    return USBD_ENDPx_DataUp(ENDP2, send_buffer, DEF_ENDP_SIZE_NKRO);
 }

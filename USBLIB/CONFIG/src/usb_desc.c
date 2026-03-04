@@ -41,13 +41,13 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x02, // bDescriptorType
     USBD_SIZE_CONFIG_DESC & 0xFF,
     USBD_SIZE_CONFIG_DESC >> 8, // wTotalLength
-    0x06,                       // bNumInterfaces
+    0x04,                       // bNumInterfaces (Standard KB, NKRO, Custom, Consumer)
     0x01,                       // bConfigurationValue
     0x00,                       // iConfiguration
     0xA0,                       // bmAttributes: Bus Powered; Remote Wakeup
     0x32,                       // MaxPower: 100mA
 
-    /* Interface Descriptor (Keyboard) */
+    /* Interface Descriptor (Standard Keyboard) */
     0x09, // bLength
     0x04, // bDescriptorType
     0x00, // bInterfaceNumber
@@ -55,10 +55,10 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x01, // bNumEndpoints
     0x03, // bInterfaceClass
     0x01, // bInterfaceSubClass
-    0x01, // bInterfaceProtocol: Keyboard
+    0x01, // bInterfaceProtocol: Keyboard (Boot)
     0x00, // iInterface
 
-    /* HID Descriptor (Keyboard) */
+    /* HID Descriptor (Standard Keyboard) */
     0x09, // bLength
     0x21, // bDescriptorType
     0x11,
@@ -69,7 +69,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     USBD_SIZE_REPORT_DESC_KB & 0xFF,
     USBD_SIZE_REPORT_DESC_KB >> 8, // wDescriptorLength
 
-    /* Endpoint Descriptor (Keyboard) */
+    /* Endpoint Descriptor (Standard Keyboard IN) */
     0x07, // bLength
     0x05, // bDescriptorType
     0x81, // bEndpointAddress: IN Endpoint 1
@@ -78,18 +78,18 @@ const uint8_t USBD_ConfigDescriptor[] = {
     DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
     0x01,                  // bInterval: 1mS
 
-    /* Interface Descriptor (Keyboard) */
+    /* Interface Descriptor (NKRO Bitmap Keyboard) */
     0x09, // bLength
     0x04, // bDescriptorType
     0x01, // bInterfaceNumber
     0x00, // bAlternateSetting
     0x01, // bNumEndpoints
-    0x03, // bInterfaceClass
-    0x01, // bInterfaceSubClass
-    0x01, // bInterfaceProtocol: Keyboard
+    0x03, // bInterfaceClass (HID)
+    0x00, // bInterfaceSubClass (no boot)
+    0x00, // bInterfaceProtocol
     0x00, // iInterface
 
-    /* HID Descriptor (Keyboard) */
+    /* HID Descriptor (NKRO) */
     0x09, // bLength
     0x21, // bDescriptorType
     0x11,
@@ -97,84 +97,22 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x00, // bCountryCode
     0x01, // bNumDescriptors
     0x22, // bDescriptorType
-    USBD_SIZE_REPORT_DESC_KB & 0xFF,
-    USBD_SIZE_REPORT_DESC_KB >> 8, // wDescriptorLength
+    USBD_SIZE_REPORT_DESC_NKRO & 0xFF,
+    USBD_SIZE_REPORT_DESC_NKRO >> 8, // wDescriptorLength
 
-    /* Endpoint Descriptor (Keyboard) */
+    /* Endpoint Descriptor (NKRO IN) */
     0x07, // bLength
     0x05, // bDescriptorType
     0x82, // bEndpointAddress: IN Endpoint 2
     0x03, // bmAttributes
-    DEF_ENDP_SIZE_KB & 0xFF,
-    DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
-    0x01,                  // bInterval: 1mS
-
-    /* Interface Descriptor (Keyboard) */
-    0x09, // bLength
-    0x04, // bDescriptorType
-    0x02, // bInterfaceNumber
-    0x00, // bAlternateSetting
-    0x01, // bNumEndpoints
-    0x03, // bInterfaceClass
-    0x01, // bInterfaceSubClass
-    0x01, // bInterfaceProtocol: Keyboard
-    0x00, // iInterface
-
-    /* HID Descriptor (Keyboard) */
-    0x09, // bLength
-    0x21, // bDescriptorType
-    0x11,
-    0x01, // bcdHID
-    0x00, // bCountryCode
-    0x01, // bNumDescriptors
-    0x22, // bDescriptorType
-    USBD_SIZE_REPORT_DESC_KB & 0xFF,
-    USBD_SIZE_REPORT_DESC_KB >> 8, // wDescriptorLength
-
-    /* Endpoint Descriptor (Keyboard) */
-    0x07, // bLength
-    0x05, // bDescriptorType
-    0x83, // bEndpointAddress: IN Endpoint 3
-    0x03, // bmAttributes
-    DEF_ENDP_SIZE_KB & 0xFF,
-    DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
-    0x01,                  // bInterval: 1mS
-
-    /* Interface Descriptor (Keyboard) */
-    0x09, // bLength
-    0x04, // bDescriptorType
-    0x03, // bInterfaceNumber
-    0x00, // bAlternateSetting
-    0x01, // bNumEndpoints
-    0x03, // bInterfaceClass
-    0x01, // bInterfaceSubClass
-    0x01, // bInterfaceProtocol: Keyboard
-    0x00, // iInterface
-
-    /* HID Descriptor (Keyboard) */
-    0x09, // bLength
-    0x21, // bDescriptorType
-    0x11,
-    0x01, // bcdHID
-    0x00, // bCountryCode
-    0x01, // bNumDescriptors
-    0x22, // bDescriptorType
-    USBD_SIZE_REPORT_DESC_KB & 0xFF,
-    USBD_SIZE_REPORT_DESC_KB >> 8, // wDescriptorLength
-
-    /* Endpoint Descriptor (Keyboard) */
-    0x07, // bLength
-    0x05, // bDescriptorType
-    0x84, // bEndpointAddress: IN Endpoint 4
-    0x03, // bmAttributes
-    DEF_ENDP_SIZE_KB & 0xFF,
-    DEF_ENDP_SIZE_KB >> 8, // wMaxPacketSize
-    0x01,                  // bInterval: 1mS
+    DEF_ENDP_SIZE_NKRO & 0xFF,
+    DEF_ENDP_SIZE_NKRO >> 8, // wMaxPacketSize
+    0x01,                    // bInterval: 1mS
 
     /* Interface Descriptor (Custom) */
     0x09, // bLength
     0x04, // bDescriptorType
-    0x04, // bInterfaceNumber
+    0x02, // bInterfaceNumber
     0x00, // bAlternateSetting
     0x02, // bNumEndpoints
     0x03, // bInterfaceClass
@@ -196,7 +134,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     /* Endpoint Descriptor (Custom IN) */
     0x07, // bLength
     0x05, // bDescriptorType
-    0x85, // bEndpointAddress: IN Endpoint 5
+    0x83, // bEndpointAddress: IN Endpoint 3
     0x03, // bmAttributes
     DEF_ENDP_SIZE_CUSTOM & 0xFF,
     DEF_ENDP_SIZE_CUSTOM >> 8, // wMaxPacketSize
@@ -205,7 +143,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     /* Endpoint Descriptor (Custom OUT) */
     0x07, // bLength
     0x05, // bDescriptorType
-    0x05, // bEndpointAddress: OUT Endpoint 5
+    0x03, // bEndpointAddress: OUT Endpoint 3
     0x03, // bmAttributes
     DEF_ENDP_SIZE_CUSTOM & 0xFF,
     DEF_ENDP_SIZE_CUSTOM >> 8, // wMaxPacketSize
@@ -214,7 +152,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     /* Interface Descriptor (Consumer) */
     0x09, // bLength
     0x04, // bDescriptorType
-    0x05, // bInterfaceNumber
+    0x03, // bInterfaceNumber
     0x00, // bAlternateSetting
     0x01, // bNumEndpoints
     0x03, // bInterfaceClass (HID)
@@ -236,11 +174,11 @@ const uint8_t USBD_ConfigDescriptor[] = {
     /* Endpoint Descriptor (Consumer IN) */
     0x07, // bLength
     0x05, // bDescriptorType
-    0x86, // bEndpointAddress: IN Endpoint 6
+    0x84, // bEndpointAddress: IN Endpoint 4
     0x03, // bmAttributes
     DEF_ENDP_SIZE_CONSUMER & 0xFF,
     DEF_ENDP_SIZE_CONSUMER >> 8, // wMaxPacketSize
-    0x0A,                        // bInterval: 10mS
+    0x01,                        // bInterval: 1mS
 };
 
 /* USB String Descriptors */
@@ -343,3 +281,20 @@ const uint8_t USBD_ConsumerRepDesc[USBD_SIZE_REPORT_DESC_CONSUMER] =
         0x81, 0x00,       //   Input (Data,Array,Absolute)
         0xC0              // End Collection
 };
+
+/* NKRO HID Report Descriptor (bitmap covering usages 0..119) */
+const uint8_t USBD_NKRORepDesc[USBD_SIZE_REPORT_DESC_NKRO] =
+    {
+        0x05, 0x01, // Usage Page (Generic Desktop)
+        0x09, 0x06, // Usage (Keyboard)
+        0xA1, 0x01, // Collection (Application)
+        0x85, 0x02, //   Report ID (2)
+        0x05, 0x07, //   Usage Page (Key Codes)
+        0x19, 0x00, //   Usage Minimum (0)
+        0x29, 0x77, //   Usage Maximum (119)
+        0x15, 0x00, //   Logical Minimum (0)
+        0x25, 0x01, //   Logical Maximum (1)
+        0x75, 0x01, //   Report Size (1)
+        0x95, 0x78, //   Report Count (120)
+        0x81, 0x02, //   Input (Data,Variable,Absolute) - bitmap
+        0xC0};
