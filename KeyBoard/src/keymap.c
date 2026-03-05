@@ -2,6 +2,7 @@
 #include "key.h"
 #include "usb_endp.h"
 #include "utils.h"
+#include "encode.h"
 #include <string.h>
 #include <stdbool.h>
 
@@ -58,6 +59,13 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     uint8_t modifier_bits = 0;      // 合并所有按下键的修饰位（仅键盘有效）
     uint8_t mouse_buttons_mask = 0; /* bits 0..4 */
     int16_t mouse_wheel_sum = 0;
+
+    /* 将编码器相对变化计入鼠标滚轮上报 */
+    const int16_t enc_delta = encode_get_count();
+    if (enc_delta != 0)
+    {
+        mouse_wheel_sum += enc_delta;
+    }
 
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
     uint32_t scan = keys;

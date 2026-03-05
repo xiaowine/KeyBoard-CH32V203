@@ -174,7 +174,6 @@ void app_run(void)
             key_pressed_count = 0;
         }
         // output_data((const uint8_t *)last_snapshot);
-        // hid_comm_send((uint8_t *)last_snapshot, HjjjjjjjjjjjjjC165_COUNT);
     }
 }
 

@@ -1,7 +1,18 @@
 #include "encode.h"
 #include "utils.h"
+#include "ch32v20x.h"
+#include <stdint.h>
 
 volatile int circle = 0;
+
+/* Extended absolute encoder count (in counts). Updated from TIM2 IRQ on overflow/underflow. */
+volatile int32_t encoder_abs = 0;
+/* Last hardware 16-bit counter value (kept for debug/consistency). */
+static volatile uint16_t last_hw_cnt = 0;
+/* Last reported absolute value to callers (for delta computation). */
+static volatile int32_t last_reported_abs = 0;
+/* Flag to indicate first call to encode_get_count */
+static volatile uint8_t encode_first_call = 1;
 
 void encode_init(void)
 {
@@ -33,40 +44,65 @@ void encode_init(void)
     TIM_ICInitStructure.TIM_ICFilter = 0x0F;
     TIM_ICInit(TIM2, &TIM_ICInitStructure);
 
-    // NVIC_InitTypeDef NVIC_InitStructure;
-    // NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-    // NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-    // NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
-    // NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
-    // NVIC_Init(&NVIC_InitStructure);
-    //
-    // TIM_ClearITPendingBit(TIM2, TIM_IT_CC1);
-    // TIM_ClearITPendingBit(TIM2, TIM_IT_CC2);
-    // TIM_ITConfig(TIM2, TIM_IT_CC1 | TIM_IT_CC2, ENABLE);
+    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+
+    NVIC_InitTypeDef NVIC_InitStructure;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
+    NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
+    NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
+    NVIC_Init(&NVIC_InitStructure);
 
     TIM_Cmd(TIM2, ENABLE);
 }
-//
-// INTF void TIM2_IRQHandler(void)
-// {
-//     if (TIM_GetITStatus(TIM2, TIM_IT_CC1) != RESET || TIM_GetITStatus(TIM2, TIM_IT_CC2) != RESET)
-//     {
-//         if (TIM_GetITStatus(TIM2, TIM_IT_CC1) != RESET)
-//         {
-//             TIM_ClearITPendingBit(TIM2, TIM_IT_CC1);
-//         }
-//         if (TIM_GetITStatus(TIM2, TIM_IT_CC2) != RESET)
-//         {
-//             TIM_ClearITPendingBit(TIM2, TIM_IT_CC2);
-//         }
-//
-//         static uint16_t last_cnt = 0;
-//         const uint16_t current_cnt = TIM_GetCounter(TIM2);
-//
-//         if (current_cnt != last_cnt)
-//         {
-//             PRINT("Encoder Count: %u\r\n", current_cnt);
-//             last_cnt = current_cnt;
-//         }
-//     }
-// }
+
+int16_t encode_get_count(void)
+{
+    int16_t ret = 0;
+
+    /* Disable TIM2 IRQ briefly to read a consistent absolute value */
+    NVIC_DisableIRQ(TIM2_IRQn);
+
+    uint16_t hw = TIM_GetCounter(TIM2);
+    int32_t cur_abs = encoder_abs + (int32_t)hw;
+
+    if (encode_first_call)
+    {
+        last_reported_abs = cur_abs;
+        encode_first_call = 0;
+        ret = 0;
+    }
+    else
+    {
+        int32_t delta = cur_abs - last_reported_abs;
+        last_reported_abs = cur_abs;
+        ret = (int16_t)delta;
+    }
+
+    NVIC_EnableIRQ(TIM2_IRQn);
+    return ret;
+}
+
+INTF void TIM2_IRQHandler(void)
+{
+    if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+    {
+        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+
+        uint16_t cnt = TIM_GetCounter(TIM2);
+
+        /* If DIR bit is set, the timer is counting down; on update event that's an underflow (wrap down)
+         * Otherwise it's an overflow (wrap up). Adjust encoder_abs by +/- 65536 accordingly. */
+        if (TIM2->CTLR1 & TIM_DIR)
+        {
+            encoder_abs -= 65536;
+        }
+        else
+        {
+            encoder_abs += 65536;
+        }
+
+        last_hw_cnt = cnt;
+    }
+}
