@@ -206,8 +206,8 @@
 						"do_not_use_standard_start_files": true,
 						"do_not_use_default_libraries": false,
 						"no_startup_or_default_libs": false,
-						"remove_unused_sections": true,
-						"print_removed_sections": false,
+						"remove_unused_sections": false,
+						"print_removed_sections": true,
 						"omit_all_symbol_information": false
 					},
 					"libraries": {
@@ -240,8 +240,8 @@
 						"do_not_use_standard_start_files": true,
 						"do_not_use_default_libraries": false,
 						"no_startup_or_default_libs": false,
-						"remove_unused_sections": true,
-						"print_removed_sections": false,
+						"remove_unused_sections": false,
+						"print_removed_sections": true,
 						"omit_all_symbol_information": false
 					},
 					"libraries": {

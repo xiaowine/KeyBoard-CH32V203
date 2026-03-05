@@ -6,11 +6,8 @@
  * Description        : HID communication implementation
  *************************************************************************/
 #include "hid_comm.h"
-#include "usb_lib.h"
 #include "usb_endp.h"
 #include "debug.h"
-#include "utils.h"
-#include <string.h>
 
 /* External functions from usb_endp.c */
 /* Static variables */
@@ -23,11 +20,11 @@ static hid_comm_callback_t data_received_callback = NULL;
  * @brief   Send data through HID communication (31-byte payload + Report ID)
  *
  * @param   data - pointer to data buffer
- *          len  - data length (max 31 bytes - Report ID automatically added)
+ * @param len should not exceed HID_COMM_DATA_SIZE - 1 to reserve space for Report ID
  *
  * @return  Status (0=success, 1=error)
  */
-uint8_t hid_comm_send(uint8_t* data, uint16_t len)
+uint8_t hid_comm_send(const uint8_t* data, const uint16_t len)
 {
     // Send via USB endpoint (Report ID will be automatically added)
     return USBD_SendCustomData(data, len);

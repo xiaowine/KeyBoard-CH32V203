@@ -1,7 +1,5 @@
 #include "key.h"
-
 #include <string.h>
-
 #include "utils.h"
 
 /* 模块内部缓冲区与标志 */
@@ -151,7 +149,7 @@ void output_data(const uint8_t rx_buf[HC165_COUNT])
  * @param slot 采样槽位 (0~2)
  * @param sample 待存采样数据
  */
-void key_store_sample(uint8_t slot, const uint8_t sample[HC165_COUNT])
+void key_store_sample(const uint8_t slot, const uint8_t sample[HC165_COUNT])
 {
     if (slot >= KEY_SAMPLE_WINDOW)
         return;
@@ -170,21 +168,21 @@ void key_do_filter_and_update(void)
      */
     for (uint8_t byte_idx = 0; byte_idx < HC165_COUNT; byte_idx++)
     {
-        uint8_t sample0 = key_sample_buffer[0][byte_idx];
-        uint8_t sample1 = key_sample_buffer[1][byte_idx];
-        uint8_t sample2 = key_sample_buffer[2][byte_idx];
+        const uint8_t sample0 = key_sample_buffer[0][byte_idx];
+        const uint8_t sample1 = key_sample_buffer[1][byte_idx];
+        const uint8_t sample2 = key_sample_buffer[2][byte_idx];
 
         /* 布尔代数方式：(a & b) | (b & c) | (a & c) 给出都至少 2 个为 1 的位 */
-        uint8_t filtered = (sample0 & sample1) | (sample1 & sample2) | (sample0 & sample2);
+        const uint8_t filtered = (sample0 & sample1) | (sample1 & sample2) | (sample0 & sample2);
         key_filtered_state[byte_idx] = filtered;
     }
 
     /* 更新每键的四态状态机（连续 2 次确认转移） */
     for (uint8_t key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
     {
-        uint8_t byte_idx = key_idx >> 3;  /* key_idx / 8 */
-        uint8_t bit_idx = key_idx & 0x07; /* key_idx % 8 */
-        uint8_t key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
+        const uint8_t byte_idx = key_idx >> 3;  /* key_idx / 8 */
+        const uint8_t bit_idx = key_idx & 0x07; /* key_idx % 8 */
+        const uint8_t key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
 
         key_debounce_t *state = &key_debounce_state[key_idx];
 
@@ -235,7 +233,7 @@ void key_do_filter_and_update(void)
  * @param key_idx 按键索引 (0-23)
  * @return 按键状态 (KEY_DEBOUNCE_IDLE 或 KEY_DEBOUNCE_PRESSED)
  */
-key_debounce_state_e key_get_debounce_state(uint8_t key_idx)
+key_debounce_state_e key_get_debounce_state(const uint8_t key_idx)
 {
     if (key_idx >= KEY_TOTAL_KEYS)
         return KEY_DEBOUNCE_IDLE;

@@ -11,8 +11,6 @@ volatile int32_t encoder_abs = 0;
 static volatile uint16_t last_hw_cnt = 0;
 /* Last reported absolute value to callers (for delta computation). */
 static volatile int32_t last_reported_abs = 0;
-/* Flag to indicate first call to encode_get_count */
-static volatile uint8_t encode_first_call = 1;
 
 void encode_init(void)
 {
@@ -59,26 +57,14 @@ void encode_init(void)
 
 int16_t encode_get_count(void)
 {
-    int16_t ret = 0;
-
     /* Disable TIM2 IRQ briefly to read a consistent absolute value */
     NVIC_DisableIRQ(TIM2_IRQn);
 
-    uint16_t hw = TIM_GetCounter(TIM2);
-    int32_t cur_abs = encoder_abs + (int32_t)hw;
+    const uint16_t hw = TIM_GetCounter(TIM2);
+    const int32_t cur_abs = encoder_abs + (int32_t)hw;
 
-    if (encode_first_call)
-    {
-        last_reported_abs = cur_abs;
-        encode_first_call = 0;
-        ret = 0;
-    }
-    else
-    {
-        int32_t delta = cur_abs - last_reported_abs;
-        last_reported_abs = cur_abs;
-        ret = (int16_t)delta;
-    }
+    const int16_t ret = (int16_t)((last_reported_abs - cur_abs) / 4);
+    last_reported_abs = cur_abs;
 
     NVIC_EnableIRQ(TIM2_IRQn);
     return ret;

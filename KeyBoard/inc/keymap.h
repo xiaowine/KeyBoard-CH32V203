@@ -1,12 +1,9 @@
 #ifndef KEYBOARD_KEYMAP_H
 #define KEYBOARD_KEYMAP_H
 #include "key.h"
-#include "app.h"
 #include "utils.h"
 
 #define MAX_CODE 3
-#define MAX_POSSIBLE_CODES (HC165_COUNT * MAX_CODE)
-#define KB_GROUPS CEIL_DIV(8 * HC165_COUNT, 6)
 #define BOOT_KEY_MAX 6
 #define KB_HEARTBEAT_INTERVAL 100
 
@@ -19,11 +16,10 @@ typedef enum
     KEY_TYPE_MOUSE_WHEEL,
 } KeyType;
 
-// 每个物理按键对应的映射，最多支持 3 个同时触发的操作码（可调）
 typedef struct
 {
     uint8_t count;
-    uint8_t modifiers; // HID 8-bit modifier mask (standard USB HID modifier bits)
+    uint8_t modifiers;
     union
     {
         uint8_t kcodes[MAX_CODE];
@@ -32,7 +28,7 @@ typedef struct
         int8_t mouse_wheel;
     } codes;
 
-    KeyType type; /* KEY_TYPE_KEYBOARD or KEY_TYPE_CONSUMER or KEY_TYPE_MOUSE */
+    KeyType type;
 } KeyMapping;
 
 // 标准 USB HID modifier 位定义
