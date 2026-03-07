@@ -70,27 +70,11 @@ list(APPEND SRC_FILES
         "Startup/startup_ch32v20x_D6.S"
 )
 set(COMMON_RISCV_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g")
+set(RTL_DUMP_FLAGS "-fdump-rtl-expand")
 
-set(CMAKE_C_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu11")
-set(CMAKE_CXX_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu++11 -fabi-version=0")
-set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -x assembler-with-cpp")
-
-# Option: enable generation of GCC RTL dumps (.expand files)
-# When enabled, GCC will emit RTL dump files (e.g. from the expand pass).
-# Enable with: cmake -B build -DENABLE_GCC_RTL_DUMPS=ON
-option(ENABLE_GCC_RTL_DUMPS "Enable generation of GCC RTL dump (.expand) files during compilation" ON)
-if(ENABLE_GCC_RTL_DUMPS)
-    message(STATUS "GCC RTL dumps enabled: adding -fdump-rtl-expand and -fdump-rtl-all to compiler flags")
-    # Add RTL dump flags to C/C++/ASM compilation flags
-    set(RTL_DUMP_FLAGS "-fdump-rtl-expand")
-    foreach(_flag IN LISTS RTL_DUMP_FLAGS)
-        set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${_flag}")
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${_flag}")
-        set(CMAKE_ASM_FLAGS "${CMAKE_ASM_FLAGS} ${_flag}")
-    endforeach()
-    # Recommend saving temps if user also wants preprocessed files
-    message(STATUS "Tip: use -DSAVE_TEMPS=ON or add -save-temps if you need preprocessed/assembly files alongside dumps")
-endif()
+set(CMAKE_C_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu11 ${RTL_DUMP_FLAGS}")
+set(CMAKE_CXX_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu++11 -fabi-version=0 ${RTL_DUMP_FLAGS}")
+set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -x assembler-with-cpp ${RTL_DUMP_FLAGS}")
 
 add_executable("${TARGET_ARTIFACT}" ${SRC_FILES})
 
