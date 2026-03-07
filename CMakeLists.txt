@@ -29,10 +29,14 @@ if (DEFINED ENV{TOOLCHAIN_FOLDER})
     set(TOOLCHAIN_FOLDER "$ENV{TOOLCHAIN_FOLDER}")
 else ()
     # Fallback default used when the environment variable is not set
-    set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC12")
+    set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC15")
     message(STATUS "TOOLCHAIN_FOLDER not set in environment; using default: ${TOOLCHAIN_FOLDER}")
 endif ()
-set(TOOLCHAIN_PREFIX "riscv-wch-elf-")
+set(TOOLCHAIN_PREFIX "riscv32-wch-elf-")
+
+
+#set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC")
+#set(TOOLCHAIN_PREFIX "riscv-none-embed-")
 set(CMAKE_C_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")
 set(CMAKE_CXX_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}g++.exe")
 set(CMAKE_ASM_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")

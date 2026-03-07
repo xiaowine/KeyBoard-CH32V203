@@ -2,30 +2,21 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"label": "make build",
+			"label": "openocd: flash",
 			"type": "shell",
-			"command": "F:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/others/Build_Tools/Make/bin/make.exe",
+			"command": "F:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/OpenOCD/OpenOCD/bin/openocd.exe",
 			"args": [
-				"all"
+				"-f",
+				"board/wch-riscv.cfg",
+				"-c",
+				"init; reset halt; program obj/KeyBoard.elf verify reset; exit"
 			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
 			"presentation": {
 				"echo": true,
 				"reveal": "always",
 				"focus": false,
 				"panel": "shared"
 			}
-		},
-		{
-			"label": "make clean",
-			"type": "shell",
-			"command": "F:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/others/Build_Tools/Make/bin/make.exe",
-			"args": [
-				"clean"
-			]
 		}
 	]
 }

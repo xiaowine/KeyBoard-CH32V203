@@ -1,7 +1,6 @@
 #include "encode.h"
 #include "utils.h"
 #include "ch32v20x.h"
-#include <stdint.h>
 
 volatile int circle = 0;
 

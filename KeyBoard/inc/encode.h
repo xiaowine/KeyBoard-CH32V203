@@ -2,7 +2,6 @@
 #define KEYBOARD_ENCODE_H
 
 #include "debug.h"
-#include <stdint.h>
 
 #define ENCODE_A GPIO_Pin_0
 #define ENCODE_B GPIO_Pin_1
