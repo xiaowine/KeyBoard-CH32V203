@@ -236,23 +236,6 @@ handle_reset:
 	addi a1, a1, 4
 	bltu a1, a2, 1b
 2:
-/* 将 keymap（位于 KEYMAP_FLASH）拷贝到显式分配的 RAM 缓冲区 `keymap_ram` */
-    la a0, _keymap_lma    /* 源：KEYMAP_FLASH 中的加载地址（LMA） */
-    la a1, keymap_ram     /* 目标：在 C 中定义的显式 RAM 缓冲区 `keymap_ram` */
-    /* 计算目标结束地址：a2 = a1 + (_keymap_end - _keymap_vma) */
-    la t0, _keymap_end
-    la t1, _keymap_vma
-    sub t2, t0, t1        /* t2 = keymap 镜像大小 */
-    add a2, a1, t2        /* a2 = 目标起始地址 + 大小（结束地址） */
-    /* 当 a1 < a2 时进行拷贝 */
-    bgeu a1, a2, 2f
-1:
-    lw t0, (a0)
-    sw t0, (a1)
-    addi a0, a0, 4
-    addi a1, a1, 4
-    bltu a1, a2, 1b
-2:
 /* Clear bss section */
 	la a0, _sbss
 	la a1, _ebss
