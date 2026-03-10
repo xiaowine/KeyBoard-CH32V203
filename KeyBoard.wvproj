@@ -50,8 +50,7 @@
 				"post_script": "",
 				"post_script_description": "",
 				"excludeResources": [
-					"${project}/board/startup_ch32v20x_D8W.S",
-					"${project}/board/startup_ch32v20x_D8.S"
+					"${project}/board/startup_ch32v20x_D8W.S"
 				],
 				"optimization": {
 					"level": "fast",
@@ -96,7 +95,7 @@
 				},
 				"debugging": {
 					"debug_level": "default",
-					"debug_format": "dwarf4",
+					"debug_format": "default",
 					"generate_prof_information": false,
 					"generate_gprof_information": false,
 					"other_debugging_flags": ""
@@ -209,8 +208,8 @@
 						"do_not_use_standard_start_files": true,
 						"do_not_use_default_libraries": false,
 						"no_startup_or_default_libs": false,
-						"remove_unused_sections": false,
-						"print_removed_sections": true,
+						"remove_unused_sections": true,
+						"print_removed_sections": false,
 						"omit_all_symbol_information": false
 					},
 					"libraries": {
@@ -243,8 +242,8 @@
 						"do_not_use_standard_start_files": true,
 						"do_not_use_default_libraries": false,
 						"no_startup_or_default_libs": false,
-						"remove_unused_sections": false,
-						"print_removed_sections": true,
+						"remove_unused_sections": true,
+						"print_removed_sections": false,
 						"omit_all_symbol_information": false
 					},
 					"libraries": {
