@@ -71,7 +71,7 @@ file(GLOB SRC_FILES
 )
 
 list(APPEND SRC_FILES
-        "Startup/startup_ch32v20x_D6.S"
+        "board/startup_ch32v20x_D6.S"
 )
 set(COMMON_RISCV_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g")
 set(RTL_DUMP_FLAGS "-fdump-rtl-expand")
@@ -94,7 +94,7 @@ target_include_directories("${TARGET_ARTIFACT}" PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/Startup"
 )
 
-set_target_properties("${TARGET_ARTIFACT}" PROPERTIES LINK_FLAGS "${COMMON_RISCV_FLAGS} -T \"${CMAKE_CURRENT_SOURCE_DIR}/Ld/Link.ld\" -nostartfiles -Xlinker --gc-sections -Xlinker --print-memory-usage -Wl,-Map,\"${MAP_FILE}\" --specs=nano.specs --specs=nosys.specs -o \"${TARGET_ARTIFACT}\"")
+set_target_properties("${TARGET_ARTIFACT}" PROPERTIES LINK_FLAGS "${COMMON_RISCV_FLAGS} -T \"${CMAKE_CURRENT_SOURCE_DIR}/board/Link.ld\" -nostartfiles -Xlinker --gc-sections -Xlinker --print-memory-usage -Wl,-Map,\"${MAP_FILE}\" --specs=nano.specs --specs=nosys.specs -o \"${TARGET_ARTIFACT}\"")
 
 target_link_libraries("${TARGET_ARTIFACT}")
 
