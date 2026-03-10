@@ -7,66 +7,40 @@
 #define BOOT_KEY_MAX 6
 #define KB_HEARTBEAT_INTERVAL 100
 
-/* 按键类型 */
-typedef enum
-{
-    KEY_TYPE_KEYBOARD,
-    KEY_TYPE_CONSUMER,
-    KEY_TYPE_MOUSE_BUTTON,
-    KEY_TYPE_MOUSE_WHEEL,
-} KeyType;
+/* 按键类型 —— 使用常量宏定义 */
+#define KEY_TYPE_KEYBOARD 0
+#define KEY_TYPE_CONSUMER 1
+#define KEY_TYPE_MOUSE_BUTTON 2
+#define KEY_TYPE_MOUSE_WHEEL 3
 
-typedef struct
+typedef struct __attribute__((packed))
 {
-    uint8_t count;
-    uint8_t modifiers;
+    uint8_t count;     /* 1 字节 */
+    uint8_t modifiers; /* 1 字节 */
     union
     {
         uint8_t kcodes[MAX_CODE];
         uint16_t ccodes[MAX_CODE];
         uint8_t mouse_buttons[MAX_CODE];
         int8_t mouse_wheel;
-    } codes;
-
-    KeyType type;
+    } codes;      /* 可变字段：紧跟在 modifiers 之后打包 */
+    uint8_t type; /* 1 字节，使用 KEY_TYPE_* 宏 */
 } KeyMapping;
 
-// 标准 USB HID modifier 位定义
-#define MOD_LCTRL 0x01
-#define MOD_LSHIFT 0x02
-#define MOD_LALT 0x04
-#define MOD_LGUI 0x08
-#define MOD_RCTRL 0x10
-#define MOD_RSHIFT 0x20
-#define MOD_RALT 0x40
-#define MOD_RGUI 0x80
+/* 明确定义的运行时 RAM 数组：startup 会把 FLASH 中的 keymap 镜像拷贝到该数组。 */
+extern KeyMapping keymap_ram[KEY_TOTAL_KEYS];
 
-static const KeyMapping KEY_MAP[24] = {
-    {1, 0x00, {.mouse_buttons = 0x01}, KEY_TYPE_MOUSE_BUTTON}, // Key 0 -> Mouse Left (button bit0)
-    {1, 0x00, {.mouse_wheel = 2}, KEY_TYPE_MOUSE_WHEEL}, // Key 1 -> Mouse Wheel Up
-    {1, MOD_LCTRL, {.kcodes = {0x06}}, KEY_TYPE_KEYBOARD}, // Key 2 -> 'C' (Ctrl+C)
-    {1, 0x00, {.kcodes = {0x07}}, KEY_TYPE_KEYBOARD}, // Key 3 -> 'D'
-    {1, 0x00, {.kcodes = {0x08}}, KEY_TYPE_KEYBOARD}, // Key 4 -> 'E'
-    {1, 0x00, {.kcodes = {0x09}}, KEY_TYPE_KEYBOARD}, // Key 5 -> 'F'
-    {1, 0x00, {.kcodes = {0x0A}}, KEY_TYPE_KEYBOARD}, // Key 6 -> 'G'
-    {1, 0x00, {.kcodes = {0x0B}}, KEY_TYPE_KEYBOARD}, // Key 7 -> 'H'
-    {1, 0x00, {.kcodes = {0x0C}}, KEY_TYPE_KEYBOARD}, // Key 8 -> 'I'
-    {1, 0x00, {.kcodes = {0x0D}}, KEY_TYPE_KEYBOARD}, // Key 9 -> 'J'
-    {1, 0x00, {.kcodes = {0x0E}}, KEY_TYPE_KEYBOARD}, // Key 10 -> 'K'
-    {1, 0x00, {.kcodes = {0x0F}}, KEY_TYPE_KEYBOARD}, // Key 11 -> 'L'
-    {1, 0x00, {.kcodes = {0x10}}, KEY_TYPE_KEYBOARD}, // Key 12 -> 'M'
-    {1, 0x00, {.kcodes = {0x11}}, KEY_TYPE_KEYBOARD}, // Key 13 -> 'N'
-    {1, 0x00, {.kcodes = {0x12}}, KEY_TYPE_KEYBOARD}, // Key 14 -> 'O'
-    {1, 0x00, {.kcodes = {0x13}}, KEY_TYPE_KEYBOARD}, // Key 15 -> 'P'
-    {1, 0x00, {.kcodes = {0x14}}, KEY_TYPE_KEYBOARD}, // Key 16 -> 'Q'
-    {1, 0x00, {.kcodes = {0x15}}, KEY_TYPE_KEYBOARD}, // Key 17 -> 'R'
-    {1, 0x00, {.kcodes = {0x16}}, KEY_TYPE_KEYBOARD}, // Key 18 -> 'S'
-    {1, 0x00, {.kcodes = {0x17}}, KEY_TYPE_KEYBOARD}, // Key 19 -> 'T'
-    {1, 0x00, {.kcodes = {0x18}}, KEY_TYPE_KEYBOARD}, // Key 20 -> 'U'
-    {1, 0x00, {.kcodes = {0x19}}, KEY_TYPE_KEYBOARD}, // Key 21 -> 'V'
-    {1, 0x00, {.ccodes = {0x00CD}}, KEY_TYPE_CONSUMER}, // Key 22 -> Play/Pause
-    {1, 0x00, {.kcodes = {0x1A}}, KEY_TYPE_KEYBOARD}, // Key 23 -> 'W'
-};
+// NOLINTNEXTLINE(*-reserved-identifier)
+extern uint8_t _keymap_lma[]; /* 镜像在 FLASH 中的加载地址（LMA） */
+// NOLINTNEXTLINE(*-reserved-identifier)
+extern uint8_t _keymap_vma[]; /* 镜像在 RAM 中的运行地址（VMA），startup 会把镜像拷贝到此 */
+// NOLINTNEXTLINE(*-reserved-identifier)
+extern uint8_t _keymap_end[]; /* 镜像在 RAM 中的结束地址（VMA） */
+
+static size_t keymap_size(void)
+{
+    return (size_t)&_keymap_end - (size_t)&_keymap_vma;
+}
 
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 

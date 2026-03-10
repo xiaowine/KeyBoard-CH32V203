@@ -105,6 +105,38 @@ void app_init(void)
     hid_comm_set_callback(my_hid_comm_callback);
 
     PRINT("App Init OK!\r\n");
+
+#ifdef DEBUG
+    const KeyMapping *km = (const KeyMapping *)keymap_ram;
+    size_t num = keymap_size() / sizeof(KeyMapping);
+    for (size_t i = 0; i < num; ++i)
+    {
+        PRINT("Entry %02u: count=%u mods=0x%02X type=%u codes:",
+              (unsigned)i, (unsigned)km[i].count, (unsigned)km[i].modifiers, (unsigned)km[i].type);
+        if (km[i].type == KEY_TYPE_KEYBOARD)
+        {
+            PRINT(" kcodes=%02X %02X %02X\r\n",
+                  (unsigned)km[i].codes.kcodes[0], (unsigned)km[i].codes.kcodes[1], (unsigned)km[i].codes.kcodes[2]);
+        }
+        else if (km[i].type == KEY_TYPE_CONSUMER)
+        {
+            PRINT(" ccodes=%04X %04X %04X\r\n",
+                  (unsigned)km[i].codes.ccodes[0], (unsigned)km[i].codes.ccodes[1], (unsigned)km[i].codes.ccodes[2]);
+        }
+        else if (km[i].type == KEY_TYPE_MOUSE_BUTTON)
+        {
+            PRINT(" mbuttons=%02X\r\n", (unsigned)km[i].codes.mouse_buttons[0]);
+        }
+        else if (km[i].type == KEY_TYPE_MOUSE_WHEEL)
+        {
+            PRINT(" mwheel=%d\r\n", (int)km[i].codes.mouse_wheel);
+        }
+        else
+        {
+            PRINT("\r\n");
+        }
+    }
+#endif
 }
 
 void app_run(void)
