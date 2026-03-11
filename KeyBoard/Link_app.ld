@@ -3,7 +3,6 @@ ENTRY( _start )
 __stack_size = 2048;
 
 PROVIDE( _stack_size = __stack_size );
-PROVIDE(APP_ENTRY_ADDR = ORIGIN(FLASH));
 
 
 MEMORY
