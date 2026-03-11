@@ -29,7 +29,7 @@ void USB_LP_CAN1_RX0_IRQHandler(void) __attribute__((interrupt("WCH-Interrupt-fa
  *
  * @return None
  */
-__attribute__((section(".ramfunc"))) void USB_LP_CAN1_RX0_IRQHandler(void)
+RAM void USB_LP_CAN1_RX0_IRQHandler(void)
 {
 	USB_Istr();
 }

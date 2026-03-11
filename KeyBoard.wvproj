@@ -50,7 +50,8 @@
 				"post_script": "",
 				"post_script_description": "",
 				"excludeResources": [
-					"${project}/board/startup_ch32v20x_D8W.S"
+					"${project}/board/startup_ch32v20x_D8W.S",
+					"${project}/Bootloader"
 				],
 				"optimization": {
 					"level": "fast",
@@ -110,7 +111,7 @@
 					},
 					"includes": {
 						"include_paths": [
-							"${project}/board"
+							"${project}/KeyBoard"
 						],
 						"include_system_paths": [],
 						"include_files": []
@@ -203,7 +204,7 @@
 				"clinker": {
 					"general": {
 						"scriptFiles": [
-							"${project}/board/Link.ld"
+							"${project}/KeyBoard/Link_app.ld"
 						],
 						"do_not_use_standard_start_files": true,
 						"do_not_use_default_libraries": false,
@@ -237,7 +238,7 @@
 				"cpplinker": {
 					"general": {
 						"scriptFiles": [
-							"${project}/board/Link.ld"
+							"${project}/KeyBoard/Link_app.ld"
 						],
 						"do_not_use_standard_start_files": true,
 						"do_not_use_default_libraries": false,

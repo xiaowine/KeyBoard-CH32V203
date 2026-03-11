@@ -1,16 +1,3 @@
-;/********************************** (C) COPYRIGHT *******************************
-;* File Name          : startup_ch32v20x_D6.s
-;* Author             : WCH
-;* Version            : V1.0.2
-;* Date               : 2025/10/21
-;* Description        : CH32V203F6-CH32V203F8-CH32V203G6-CH32V203G8-CH32V203K8-CH32V203C6-CH32V203C8-CH32V203G8
-;*                      Startup File.
-;*********************************************************************************
-;* Copyright (c) 2021 Nanjing Qinheng Microelectronics Co., Ltd.
-;* Attention: This software (modified or not) and binary are used for 
-;* microcontroller manufactured by Nanjing Qinheng Microelectronics.
-*******************************************************************************/
-
 	.section	.init,"ax",@progbits
 	.global	_start
 	.align	1

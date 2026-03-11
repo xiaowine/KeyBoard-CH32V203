@@ -1,4 +1,4 @@
-#include "debug.h"
+#include "utils.h"
 #include "app.h"
 #include "usb_lib.h"
 #include "utils.h"
@@ -7,6 +7,8 @@
 /* Global define */
 
 /* Global Variable */
+
+extern uint8_t APP_ENTRY_ADDR[];
 
 /*********************************************************************
  * @fn      main

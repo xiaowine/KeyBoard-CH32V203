@@ -7,7 +7,7 @@
  *************************************************************************/
 #include "hid_comm.h"
 #include "usb_endp.h"
-#include "debug.h"
+#include "utils.h"
 
 /* External functions from usb_endp.c */
 /* Static variables */

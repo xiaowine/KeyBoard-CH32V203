@@ -12,7 +12,7 @@
 *******************************************************************************/ 
 #ifndef __USB_TYPE_H
 #define __USB_TYPE_H
-#include "debug.h"
+#include "utils.h"
 #include "usb_conf.h"
 
 #ifndef NULL

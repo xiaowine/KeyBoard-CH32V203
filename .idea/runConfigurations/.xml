@@ -1,5 +1,5 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="下载固件" type="com.jetbrains.cidr.embedded.openocd.conf.type" factoryName="com.jetbrains.cidr.embedded.openocd.conf.factory" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="KeyBoard" TARGET_NAME="KeyBoard.elf" CONFIG_NAME="Debug-WCH GCC15" version="1" RUN_TARGET_PROJECT_NAME="KeyBoard" RUN_TARGET_NAME="KeyBoard.elf">
+  <configuration default="false" name="下载固件" type="com.jetbrains.cidr.embedded.openocd.conf.type" factoryName="com.jetbrains.cidr.embedded.openocd.conf.factory" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="KeyBoard" TARGET_NAME="combined_firmware" CONFIG_NAME="Debug-WCH GCC15" version="1" RUN_PATH="$PROJECT_DIR$/obj/combined.hex">
     <openocd version="1" gdb-port="3333" telnet-port="4444" board-config="D:\Project\mcu\KeyBoard\board\wch-riscv.cfg" reset-type="INIT" download-type="UPDATED_ONLY">
       <debugger kind="GDB" isBundled="true" />
     </openocd>
