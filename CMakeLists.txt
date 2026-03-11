@@ -32,13 +32,11 @@ set(COMMON_SRC_PATTERNS
         "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/USB-Driver/src/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/USBLIB/CONFIG/src/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/src/*.c"
-        "${CMAKE_CURRENT_SOURCE_DIR}/Debug/*.c"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core/*.c"
 )
 
 # 公共 include 列表（复用）
 set(COMMON_INCLUDE_DIRS
-        "${CMAKE_CURRENT_SOURCE_DIR}/Debug"
         "${CMAKE_CURRENT_SOURCE_DIR}/Core"
         "${CMAKE_CURRENT_SOURCE_DIR}/User"
         "${CMAKE_CURRENT_SOURCE_DIR}/Peripheral/inc"
