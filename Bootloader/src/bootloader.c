@@ -1,4 +1,4 @@
-#include <utils.h>
+#include <../../User/utils.h>
 #include "usb_lib.h"
 #include "usb_desc.h"
 
@@ -6,9 +6,14 @@ extern uint8_t APP_ENTRY_ADDR[];
 
 int main(void)
 {
-    // NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
-    // SystemCoreClockUpdate();
-    // Delay_Init();
+    __enable_irq();
+    SystemInit();
+    NVIC_PriorityGroupConfig(NVIC_PriorityGroup_1);
+    SystemCoreClockUpdate();
+    Delay_Init();
+    USART_Printf_Init(921600);
+    PRINT("Bootloader to App....\r\n");
+
     // RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     // RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
     // GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);

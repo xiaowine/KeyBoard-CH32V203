@@ -110,6 +110,7 @@ function(configure_firmware_target target_name opt_flags runtime_name hex_file b
 endfunction()
 
 # 为 KeyBoardTarget 应用通用配置
+
 # 应用公共源码模式并向目标添加特定源码
 file(GLOB SRC_FILES ${COMMON_SRC_PATTERNS} "${CMAKE_CURRENT_SOURCE_DIR}/KeyBoard/src/*.c")
 list(APPEND SRC_FILES "KeyBoard/startup_app.S")
@@ -127,7 +128,11 @@ set(BOOT_LST "${BOOT_PROJECT_NAME}.lst")
 
 
 # 使用公共源码模式并添加引导程序（bootloader）特定源码
-file(GLOB BOOT_SRC_FILES ${COMMON_SRC_PATTERNS} "${CMAKE_CURRENT_SOURCE_DIR}/Bootloader/src/*.c")
+# 只收集 bootloader 自己的源文件，避免意外包含应用层的源（例如 KeyBoard/src/main.c），
+# 否则会造成 `main` 或 `_start` 的重复定义。
+file(GLOB BOOT_SRC_FILES "${CMAKE_CURRENT_SOURCE_DIR}/Bootloader/src/*.c")
+file(GLOB BOOT_COMMON_FILES ${COMMON_SRC_PATTERNS})
+list(APPEND BOOT_SRC_FILES ${BOOT_COMMON_FILES})
 list(APPEND BOOT_SRC_FILES "Bootloader/startup_bootloader.S")
 add_executable(BootloaderTarget ${BOOT_SRC_FILES})
 # 使用通用配置包装 BootloaderTarget（引导程序）

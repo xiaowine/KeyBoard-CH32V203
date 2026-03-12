@@ -215,13 +215,13 @@ handle_reset:
 	la a1, _ramfunc_vma
 	la a2, _eramfunc
 	bgeu a1, a2, 2f
-3:
+1:
 	lw t0, (a0)
 	sw t0, (a1)
 	addi a0, a0, 4
 	addi a1, a1, 4
-	bltu a1, a2, 3b
-4:
+	bltu a1, a2, 1b
+2:
 
 /* Clear bss section */
 	la a0, _sbss

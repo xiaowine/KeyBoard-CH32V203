@@ -42,30 +42,21 @@ SECTIONS
         . = ALIGN(4);
     } >FLASH AT>FLASH 
 
- .ramfunc_load_addr :
-    {
-        . = ALIGN(4);
-        PROVIDE(_ramfunc_lma = .);
-    } >FLASH AT>FLASH
+    .ramfunc_load_addr :
+     {
+         . = ALIGN(4);
+         PROVIDE(_ramfunc_lma = .);
+     } >FLASH AT>FLASH
 
-    .ramfunc :
-    {
-        . = ALIGN(4);
-        PROVIDE(_ramfunc_vma = .);
-        *(.ramfunc)
-        *(.ramfunc.*)
-        . = ALIGN(4);
-        PROVIDE(_eramfunc = .);
-    } >RAM AT>FLASH
-    
-    .fini :
-    {
-        KEEP(*(SORT_NONE(.fini)))
-        . = ALIGN(4);
-    } >FLASH AT>FLASH
-
-    PROVIDE( _etext = . );
-    PROVIDE( _eitcm = . );
+     .ramfunc :
+     {
+         . = ALIGN(4);
+         PROVIDE(_ramfunc_vma = .);
+         *(.ramfunc)
+         *(.ramfunc.*)
+         . = ALIGN(4);
+         PROVIDE(_eramfunc = .);
+     } >RAM AT>FLASH
 
     .preinit_array  :
     {
