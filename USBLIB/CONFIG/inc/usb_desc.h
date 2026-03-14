@@ -29,6 +29,7 @@ extern "C"
 #define DEF_USBD_UEP0_SIZE 64
 
 #define USBD_SIZE_DEVICE_DESC 18
+/* total configuration descriptor length */
 #define USBD_SIZE_CONFIG_DESC 141
 
 #define DEF_ENDP_SIZE_KB 8
@@ -37,7 +38,8 @@ extern "C"
 #define USBD_SIZE_REPORT_DESC_KB 62
 #define DEF_ENDP_SIZE_CUSTOM 32
 #define DEF_ENDP_SIZE_NKRO 16
-#define USBD_SIZE_REPORT_DESC_CUSTOM 36
+/* Custom report descriptor is now 32 bytes (single 32-byte IN/OUT report) */
+#define USBD_SIZE_REPORT_DESC_CUSTOM 32
 #define DEF_ENDP_SIZE_CONSUMER 8
 #define USBD_SIZE_REPORT_DESC_CONSUMER 25
 

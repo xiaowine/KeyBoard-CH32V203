@@ -62,7 +62,7 @@ int16_t encode_get_count(void)
     const uint16_t hw = TIM_GetCounter(TIM2);
     const int32_t cur_abs = encoder_abs + (int32_t)hw;
 
-    const int16_t ret = (int16_t)((last_reported_abs - cur_abs) / 4);
+    const int16_t ret = (int16_t)((last_reported_abs - cur_abs) / 2);
     last_reported_abs = cur_abs;
 
     NVIC_EnableIRQ(TIM2_IRQn);

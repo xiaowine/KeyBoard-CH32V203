@@ -149,10 +149,10 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
 
     /* 将上面收集到的 codes 分别发送出去；分别使用键盘与媒体发送接口 */
     /* 保留心跳行为：仅在有变更或心跳触发时发送 */
-    if (kb_total > 0 || modifier_bits != 0 || kb_heartbeat_counter == 0)
-    {
-        USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
-    }
+    // if (kb_total > 0 || modifier_bits != 0 || kb_heartbeat_counter == 0)
+    // {
+    //     USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
+    // }
 
     /* 仅在 NKRO 位图与上次不同或心跳时发送 */
     if (memcmp(nkro_bitmap, prev_nkro, sizeof(nkro_bitmap)) != 0 || kb_heartbeat_counter == 0)

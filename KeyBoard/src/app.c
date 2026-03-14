@@ -133,7 +133,7 @@ void app_run(void)
 
             next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
 
-            // hid_comm_send(last_snapshot, HC165_COUNT);
+            hid_comm_send(last_snapshot, HC165_COUNT);
             key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, ENABLE);

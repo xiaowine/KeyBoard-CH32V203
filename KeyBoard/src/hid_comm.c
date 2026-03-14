@@ -17,16 +17,16 @@ static hid_comm_callback_t data_received_callback = NULL;
 /*********************************************************************
  * @fn      hid_comm_send
  *
- * @brief   Send data through HID communication (31-byte payload + Report ID)
- *
+ * @brief   Send data through HID communication (up to 32-byte payload)
+
  * @param   data - pointer to data buffer
- * @param len should not exceed HID_COMM_DATA_SIZE - 1 to reserve space for Report ID
+ * @param len should not exceed HID_COMM_DATA_SIZE
  *
  * @return  Status (0=success, 1=error)
  */
-uint8_t hid_comm_send(const uint8_t* data, const uint16_t len)
+uint8_t hid_comm_send(const uint8_t *data, const uint16_t len)
 {
-    // Send via USB endpoint (Report ID will be automatically added)
+    // Send via USB endpoint (no Report ID in single-report mode)
     return USBD_SendCustomData(data, len);
 }
 
@@ -40,28 +40,16 @@ uint8_t hid_comm_send(const uint8_t* data, const uint16_t len)
 void hid_comm_process(void)
 {
     uint16_t received_len = USBD_GetCustomData(rx_buffer, sizeof(rx_buffer));
-    uint8_t* data_ptr = rx_buffer;
-    uint16_t data_len = received_len;
 
     if (received_len == 0)
         return;
 
-    // // Check and remove Report ID if present
-    if (received_len > 0 && rx_buffer[0] == 0x02)
-    {
-        // Valid output report with Report ID 2, skip the Report ID byte
-        data_ptr = &rx_buffer[1];
-        data_len = received_len - 1;
-        PRINT("HID Comm: Received %d bytes (Report ID removed), actual data: %d bytes\r\n", received_len, data_len);
-    }
-    else
-    {
-        PRINT("HID Comm: Received %d bytes (raw data, no Report ID)\r\n", received_len);
-    }
+    // Single-report mode: payload starts at rx_buffer[0]
+    PRINT("HID Comm: Received %d bytes\r\n", received_len);
 
     if (data_received_callback)
     {
-        data_received_callback(data_ptr, data_len);
+        data_received_callback(rx_buffer, received_len);
     }
 }
 

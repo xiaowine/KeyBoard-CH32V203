@@ -9,7 +9,6 @@
  * Attention: This software (modified or not) and binary are used for
  * microcontroller manufactured by Nanjing Qinheng Microelectronics.
  *******************************************************************************/
-#include "usb_lib.h"
 #include "usb_desc.h"
 
 /* USB Device Descriptors */
@@ -278,21 +277,21 @@ const uint8_t USBD_CustomRepDesc[USBD_SIZE_REPORT_DESC_CUSTOM] =
         0x06, 0x00, 0xFF, // Usage Page (Vendor Defined 0xFF00)
         0x09, 0x01,       // Usage (0x01)
         0xA1, 0x01,       // Collection (Application)
-        0x85, 0x01,       // Report ID (1)
-        0x09, 0x01,       // Usage (0x01)
-        0x15, 0x00,       // Logical Minimum (0)
-        0x25, 0xFF,       // Logical Maximum (255)
-        0x95, 0x1F,       // Report Count (31)  // 32-1 for Report ID
-        0x75, 0x08,       // Report Size (8)
-        0x81, 0x02,       // Input (Data,Variable,Absolute)
-        0x85, 0x02,       // Report ID (2)
-        0x09, 0x01,       // Usage (0x01)
-        0x15, 0x00,       // Logical Minimum (0)
-        0x25, 0xFF,       // Logical Maximum (255)
-        0x95, 0x1F,       // Report Count (31)  // 32-1 for Report ID
-        0x75, 0x08,       // Report Size (8)
-        0x91, 0x02,       // Output (Data,Variable,Absolute)
-        0xC0              // End Collection
+        /* Input report (32 bytes) */
+        0x09, 0x01, // Usage (0x01)
+        0x15, 0x00, // Logical Minimum (0)
+        0x25, 0xFF, // Logical Maximum (255)
+        0x95, 0x20, // Report Count (32)
+        0x75, 0x08, // Report Size (8)
+        0x81, 0x02, // Input (Data,Variable,Absolute)
+        /* Output report (32 bytes) */
+        0x09, 0x01, // Usage (0x01)
+        0x15, 0x00, // Logical Minimum (0)
+        0x25, 0xFF, // Logical Maximum (255)
+        0x95, 0x20, // Report Count (32)
+        0x75, 0x08, // Report Size (8)
+        0x91, 0x02, // Output (Data,Variable,Absolute)
+        0xC0        // End Collection
 };
 
 /* Consumer HID Report Descriptor */
