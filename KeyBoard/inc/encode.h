@@ -20,6 +20,6 @@ void encode_init(void);
  * - Returns an int16_t delta; if the absolute change exceeds int16_t range,
  *   the value will be truncated.
  */
-int16_t encode_get_count(void);
+// int16_t encode_get_count(void);
 
 #endif

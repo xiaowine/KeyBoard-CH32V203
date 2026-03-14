@@ -1,13 +1,8 @@
 #include "encode.h"
 #include "utils.h"
 #include "ch32v20x.h"
+#include "usb_endp.h"
 
-volatile int circle = 0;
-
-/* Extended absolute encoder count (in counts). Updated from TIM2 IRQ on overflow/underflow. */
-volatile int32_t encoder_abs = 0;
-/* Last reported absolute value to callers (for delta computation). */
-static volatile int32_t last_reported_abs = 0;
 
 void encode_init(void)
 {
@@ -23,7 +18,7 @@ void encode_init(void)
     TIM_TimeBaseInitTypeDef TIM_TimeBaseStructure;
     TIM_TimeBaseStructInit(&TIM_TimeBaseStructure);
     TIM_TimeBaseStructure.TIM_Prescaler = 0x0;
-    TIM_TimeBaseStructure.TIM_Period = 0xFFFF;
+    TIM_TimeBaseStructure.TIM_Period = 1;
     TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
     TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
     TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
@@ -33,10 +28,10 @@ void encode_init(void)
     TIM_ICInitTypeDef TIM_ICInitStructure;
     TIM_ICStructInit(&TIM_ICInitStructure);
     TIM_ICInitStructure.TIM_Channel = TIM_Channel_1;
-    TIM_ICInitStructure.TIM_ICFilter = 0x0F;
+    TIM_ICInitStructure.TIM_ICFilter = 0x7;
     TIM_ICInit(TIM2, &TIM_ICInitStructure);
     TIM_ICInitStructure.TIM_Channel = TIM_Channel_2;
-    TIM_ICInitStructure.TIM_ICFilter = 0x0F;
+    TIM_ICInitStructure.TIM_ICFilter = 0x7;
     TIM_ICInit(TIM2, &TIM_ICInitStructure);
 
     TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
@@ -52,21 +47,6 @@ void encode_init(void)
     TIM_Cmd(TIM2, ENABLE);
 }
 
-int16_t encode_get_count(void)
-{
-    /* Disable TIM2 IRQ briefly to read a consistent absolute value */
-    NVIC_DisableIRQ(TIM2_IRQn);
-
-    const uint16_t hw = TIM_GetCounter(TIM2);
-    const int32_t cur_abs = encoder_abs + (int32_t)hw;
-
-    const int32_t prev_abs = last_reported_abs;
-    const int16_t ret = (int16_t)((cur_abs - prev_abs) >> 1);
-    last_reported_abs = cur_abs;
-    NVIC_EnableIRQ(TIM2_IRQn);
-    return ret;
-}
-
 INTF void TIM2_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
@@ -74,11 +54,11 @@ INTF void TIM2_IRQHandler(void)
         TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
         if (TIM2->CTLR1 & TIM_DIR)
         {
-            encoder_abs -= 65536;
+            USBD_SendMouseReport(0, 1);
         }
         else
         {
-            encoder_abs += 65536;
+            USBD_SendMouseReport(0, -1);
         }
     }
 }

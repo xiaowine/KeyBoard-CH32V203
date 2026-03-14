@@ -7,6 +7,10 @@
 #define RAM __attribute__((section(".ramfunc")))
 #define AL4 __attribute__((aligned(4)))
 #define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
+#define CLAMP_INPLACE(var, lo, hi) do {      \
+if ((var) > (hi)) (var) = (hi);         \
+else if ((var) < (lo)) (var) = (lo);    \
+} while (0)
 
 uint32_t get_bit_index(uint32_t v);
 
