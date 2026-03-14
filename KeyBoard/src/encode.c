@@ -6,8 +6,6 @@ volatile int circle = 0;
 
 /* Extended absolute encoder count (in counts). Updated from TIM2 IRQ on overflow/underflow. */
 volatile int32_t encoder_abs = 0;
-/* Last hardware 16-bit counter value (kept for debug/consistency). */
-static volatile uint16_t last_hw_cnt = 0;
 /* Last reported absolute value to callers (for delta computation). */
 static volatile int32_t last_reported_abs = 0;
 
@@ -62,9 +60,9 @@ int16_t encode_get_count(void)
     const uint16_t hw = TIM_GetCounter(TIM2);
     const int32_t cur_abs = encoder_abs + (int32_t)hw;
 
-    const int16_t ret = (int16_t)((last_reported_abs - cur_abs) / 2);
+    const int32_t prev_abs = last_reported_abs;
+    const int16_t ret = (int16_t)((cur_abs - prev_abs) >> 1);
     last_reported_abs = cur_abs;
-
     NVIC_EnableIRQ(TIM2_IRQn);
     return ret;
 }
@@ -74,11 +72,6 @@ INTF void TIM2_IRQHandler(void)
     if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
     {
         TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-
-        uint16_t cnt = TIM_GetCounter(TIM2);
-
-        /* If DIR bit is set, the timer is counting down; on update event that's an underflow (wrap down)
-         * Otherwise it's an overflow (wrap up). Adjust encoder_abs by +/- 65536 accordingly. */
         if (TIM2->CTLR1 & TIM_DIR)
         {
             encoder_abs -= 65536;
@@ -87,7 +80,5 @@ INTF void TIM2_IRQHandler(void)
         {
             encoder_abs += 65536;
         }
-
-        last_hw_cnt = cnt;
     }
 }
