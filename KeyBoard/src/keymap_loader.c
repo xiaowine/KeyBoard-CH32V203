@@ -17,7 +17,7 @@ void keymap_loader_init(void)
     const size_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
     memset(keymap_active, 0, layer_size);
 
-    const uint8_t* flash_base = &_keymap_lma[0];
+    const uint8_t *flash_base = &_keymap_lma[0];
     const uint8_t layer_byte = flash_base[0];
 
     int active_layer = -1;
@@ -58,12 +58,12 @@ void keymap_loader_load_layer(uint8_t layer)
     const size_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
     /* FLASH 布局：首字节为单字节层索引（image header），后续的 KEY_MAP 按 4 字节对齐放置。
       因此需要将索引字节后的地址向上对齐到 4 字节边界再计算层偏移。 */
-    const uint8_t* flash_base = (const uint8_t*)&_keymap_lma[0];
+    const uint8_t *flash_base = (const uint8_t *)&_keymap_lma[0];
     uintptr_t p = (uintptr_t)flash_base + 1; /* 跳过索引字节 */
     /* 向上对齐到 4 字节边界 */
     p = (p + 3u) & ~((uintptr_t)3u);
-    const uint8_t* layers_src = (const uint8_t*)p;
-    const uint8_t* src = layers_src + ((size_t)layer * layer_size);
+    const uint8_t *layers_src = (const uint8_t *)p;
+    const uint8_t *src = layers_src + ((size_t)layer * layer_size);
     /* 检测该层是否有数据：若整层全为 0x00 或全为 0xFF，则视为未写入/空层。
        若这是非 0 层的空数据，则尝试回退加载 layer0；若 layer0 也空则最终跳过加载。 */
     {
@@ -96,7 +96,7 @@ void keymap_loader_load_layer(uint8_t layer)
             }
         }
     }
-    void* dst = (void*)keymap_active;
+    void *dst = (void *)keymap_active;
     memcpy(dst, src, layer_size);
     /* 标记当前唯一加载的层索引 */
     loaded_layer = (int8_t)layer;
@@ -106,26 +106,26 @@ void keymap_loader_load_layer(uint8_t layer)
     PRINT("Loaded keymap layer %u:\r\n", (unsigned)layer);
     for (uint16_t i = 0; i < KEY_TOTAL_KEYS; ++i)
     {
-        const KeyMapping* e = &keymap_active[i];
+        const KeyMapping *e = &keymap_active[i];
         PRINT(" Entry %03u: count=%u mods=0x%02X type=%u codes:", (unsigned)i, (unsigned)e->count,
               (unsigned)e->modifiers, (unsigned)e->type);
         if (e->type == KEY_TYPE_KEYBOARD)
         {
-            PRINT(" kcodes=%02X %02X %02X\r\n", (unsigned)e->codes.kcodes[0], (unsigned)e->codes.kcodes[1],
-                  (unsigned)e->codes.kcodes[2]);
+            PRINT(" kcodes=%02X %02X %02X\r\n", (unsigned)e->codes[0], (unsigned)e->codes[1],
+                  (unsigned)e->codes[2]);
         }
         else if (e->type == KEY_TYPE_CONSUMER)
         {
-            PRINT(" ccodes=%04X %04X %04X\r\n", (unsigned)e->codes.ccodes[0], (unsigned)e->codes.ccodes[1],
-                  (unsigned)e->codes.ccodes[2]);
+            PRINT(" ccodes=%04X %04X %04X\r\n", (unsigned)e->codes[0], (unsigned)e->codes[1],
+                  (unsigned)e->codes[2]);
         }
         else if (e->type == KEY_TYPE_MOUSE_BUTTON)
         {
-            PRINT(" mbuttons=%02X\r\n", (unsigned)e->codes.mouse_buttons[0]);
+            PRINT(" mbuttons=%02X\r\n", (unsigned)e->codes[0]);
         }
         else if (e->type == KEY_TYPE_MOUSE_WHEEL)
         {
-            PRINT(" mwheel=%d\r\n", (int)e->codes.mouse_wheel);
+            PRINT(" mwheel=%d\r\n", (int)e->codes[0]);
         }
         else
         {

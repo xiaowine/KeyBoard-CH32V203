@@ -84,7 +84,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                     /* 只收集最多 MAX_CODE（通常为 3）个 consumer usages */
                     if (consumer_total < MAX_CODE)
                     {
-                        consumer_usages[consumer_total++] = m->codes.ccodes[i];
+                        consumer_usages[consumer_total++] = m->codes[i];
                     }
                 }
             }
@@ -93,13 +93,13 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                 /* 鼠标按钮映射：累积按钮掩码（每个映射可包含多个按钮掩码） */
                 for (uint8_t i = 0; i < m->count; i++)
                 {
-                    mouse_buttons_mask |= (m->codes.mouse_buttons[i] & 0x1F);
+                    mouse_buttons_mask |= (m->codes[i] & 0x1F);
                 }
             }
             else if (m->type == KEY_TYPE_MOUSE_WHEEL)
             {
-                /* 鼠标滚轮映射：累积滚轮增量 */
-                mouse_wheel_sum += m->codes.mouse_wheel;
+                /* 鼠标滚轮映射：累积滚轮增量（codes[0] 存储滚轮增量，按需转为有符号） */
+                mouse_wheel_sum += (int8_t)(m->codes[0] & 0xFF);
             }
             else
             {
@@ -107,7 +107,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                 modifier_bits |= m->modifiers;
                 for (uint8_t i = 0; i < m->count; i++)
                 {
-                    uint8_t code = m->codes.kcodes[i];
+                    uint8_t code = (uint8_t)(m->codes[i] & 0xFF);
                     /* 在收集阶段限制为 BOOT_KEY_MAX 并去重 */
                     if (kb_total < BOOT_KEY_MAX)
                     {

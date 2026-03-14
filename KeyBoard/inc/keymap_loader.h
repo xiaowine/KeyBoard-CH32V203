@@ -4,7 +4,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define KEYMAP_LAYERS ((4096 - 4) / (9 * KEY_TOTAL_KEYS))
+#define KEYMAP_LAYERS ((4096 - 4) / (sizeof(KeyMapping) * KEY_TOTAL_KEYS))
 
 /* 初始化：从 FLASH 读取首字节层索引并加载对应单层（紧凑镜像布局） */
 void keymap_loader_init(void);

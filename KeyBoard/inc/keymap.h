@@ -15,16 +15,10 @@
 
 typedef struct __attribute__((packed))
 {
-    uint8_t count;     /* 1 字节 */
-    uint8_t modifiers; /* 1 字节 */
-    union
-    {
-        uint8_t kcodes[MAX_CODE];
-        uint16_t ccodes[MAX_CODE];
-        uint8_t mouse_buttons[MAX_CODE];
-        int8_t mouse_wheel;
-    } codes;      /* 可变字段：紧跟在 modifiers 之后打包 */
-    uint8_t type; /* 1 字节，使用 KEY_TYPE_* 宏 */
+    uint8_t count;
+    uint8_t modifiers;
+    uint16_t codes[MAX_CODE];
+    uint8_t type;
 } KeyMapping;
 
 extern KeyMapping keymap_active[KEY_TOTAL_KEYS];
