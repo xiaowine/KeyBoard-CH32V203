@@ -22,8 +22,6 @@ static volatile uint8_t active_sample_slot = 0;
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 static volatile uint8_t scan_timeout_ticks = 0;
 
-void my_hid_comm_callback(uint8_t *data, uint16_t len);
-
 void app_init(void)
 {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
@@ -84,7 +82,7 @@ void app_init(void)
         RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
 
         TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
-        TIM_TimeBaseInitStructure.TIM_Period = 999;
+        TIM_TimeBaseInitStructure.TIM_Period = 9999; // 100ms 定时器周期
         TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
@@ -107,7 +105,7 @@ void app_init(void)
     USB_Interrupts_Config();
 
     // 注册 HID 通信回调函数
-    hid_comm_set_callback(my_hid_comm_callback);
+    // hid_comm_set_callback(my_hid_comm_callback);
 
     PRINT("App Init OK!\r\n");
 }
@@ -132,8 +130,6 @@ void app_run(void)
             }
 
             next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
-
-            hid_comm_send(last_snapshot, HC165_COUNT);
             key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, ENABLE);
@@ -178,7 +174,6 @@ void app_run(void)
             }
             key_pressed_count = 0;
         }
-        // output_data((const uint8_t *)last_snapshot);
     }
 }
 
@@ -201,6 +196,7 @@ RAM INTF void TIM3_IRQHandler(void)
         {
             scan_timeout_ticks++;
         }
+        // kb_send_snapshot(last_snapshot);
         TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
     }
 }
@@ -209,17 +205,7 @@ RAM INTF void TIM4_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
     {
-        kb_send_snapshot(last_snapshot);
+        // hid_comm_send(last_snapshot, HC165_COUNT);
         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
-    }
-}
-
-void my_hid_comm_callback(uint8_t *data, uint16_t len)
-{
-    PRINT("App: Received %d bytes from HID comm\r\n", len);
-    // 这里可以添加对接收到的数据的处理逻辑
-    for (uint16_t i = 0; i < len; i++)
-    {
-        PRINT("  Byte %d: 0x%02X\r\n", i, data[i]);
     }
 }

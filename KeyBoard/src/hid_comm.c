@@ -12,7 +12,6 @@
 /* External functions from usb_endp.c */
 /* Static variables */
 static uint8_t rx_buffer[HID_COMM_DATA_SIZE] = {0};
-static hid_comm_callback_t data_received_callback = NULL;
 
 /*********************************************************************
  * @fn      hid_comm_send
@@ -24,9 +23,8 @@ static hid_comm_callback_t data_received_callback = NULL;
  *
  * @return  Status (0=success, 1=error)
  */
-uint8_t hid_comm_send(const uint8_t *data, const uint16_t len)
+uint8_t hid_comm_send(const uint8_t* data, const uint16_t len)
 {
-    // Send via USB endpoint (no Report ID in single-report mode)
     return USBD_SendCustomData(data, len);
 }
 
@@ -39,30 +37,14 @@ uint8_t hid_comm_send(const uint8_t *data, const uint16_t len)
  */
 void hid_comm_process(void)
 {
-    uint16_t received_len = USBD_GetCustomData(rx_buffer, sizeof(rx_buffer));
+    const uint16_t received_len = USBD_GetCustomData(rx_buffer, sizeof(rx_buffer));
 
     if (received_len == 0)
-        return;
-
-    // Single-report mode: payload starts at rx_buffer[0]
-    PRINT("HID Comm: Received %d bytes\r\n", received_len);
-
-    if (data_received_callback)
     {
-        data_received_callback(rx_buffer, received_len);
+        return;
     }
-}
-
-/*********************************************************************
- * @fn      hid_comm_set_callback
- *
- * @brief   Set callback function for received data
- *
- * @param   callback - callback function pointer
- *
- * @return  None
- */
-void hid_comm_set_callback(hid_comm_callback_t callback)
-{
-    data_received_callback = callback;
+    PRINT("HID Communication: Received %d bytes\r\n", received_len);
+    // HidFrame_t *frame = (HidFrame_t *)rx_buffer;
+    // PRINT("Received HID Frame: Type=%d, DataType=%d, Seq=%d, PayloadLen=%d\r\n",
+    //       frame->ctrl.type, frame->data_type, frame->seq, frame->ctrl.len);
 }

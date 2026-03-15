@@ -137,7 +137,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x03, // bmAttributes
     DEF_ENDP_SIZE_CUSTOM & 0xFF,
     DEF_ENDP_SIZE_CUSTOM >> 8, // wMaxPacketSize
-    0x01,                      // bInterval: 1mS
+    0x0A,                      // bInterval: 10mS
 
     /* Endpoint Descriptor (Custom OUT) */
     0x07, // bLength
@@ -146,7 +146,7 @@ const uint8_t USBD_ConfigDescriptor[] = {
     0x03, // bmAttributes
     DEF_ENDP_SIZE_CUSTOM & 0xFF,
     DEF_ENDP_SIZE_CUSTOM >> 8, // wMaxPacketSize
-    0x01,                      // bInterval: 1mS
+    0x0A,                      // bInterval: 10mS
 
     /* Interface Descriptor (Consumer) */
     0x09, // bLength
