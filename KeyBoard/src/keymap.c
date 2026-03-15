@@ -18,7 +18,6 @@ KeyMapping keymap_active[KEY_TOTAL_KEYS] __attribute__((section(".data"), used, 
  */
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
 {
-    (void)0;
     // 1. 合并 24 位按键并取反（0变1表示按下）
     // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
     const uint32_t raw = (uint32_t)snapshot[0] |
@@ -68,7 +67,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     while (scan)
     {
         const uint32_t idx = get_bit_index(scan);
-        if (idx < (8 * HC165_COUNT))
+        if (idx < KEY_TOTAL_KEYS)
         {
             const KeyMapping *m = &km[idx];
             if (m->count == 0 && m->modifiers == 0 && m->type == KEY_TYPE_KEYBOARD)
@@ -148,7 +147,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     /* 仅在 NKRO 位图与上次不同或心跳时发送 */
     if (memcmp(nkro_bitmap, prev_nkro, sizeof(nkro_bitmap)) != 0 || kb_heartbeat_counter == 0)
     {
-        USBD_SendNKROBitmap(nkro_bitmap);
+        USBD_SendNKROBitmap(modifier_bits, nkro_bitmap);
         memcpy(prev_nkro, nkro_bitmap, sizeof(nkro_bitmap));
     }
 

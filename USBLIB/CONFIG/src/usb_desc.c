@@ -317,7 +317,17 @@ const uint8_t USBD_NKRORepDesc[USBD_SIZE_REPORT_DESC_NKRO] =
         0x05, 0x01, // Usage Page (Generic Desktop)
         0x09, 0x06, // Usage (Keyboard)
         0xA1, 0x01, // Collection (Application)
-        0x85, 0x02, //   Report ID (2)
+        /* Modifier byte: map usages 0xE0..0xE7 to 8 bits (LeftCtrl..Right GUI) */
+        0x05, 0x07, //   Usage Page (Key Codes)
+        0x19, 0xE0, //   Usage Minimum (224)
+        0x29, 0xE7, //   Usage Maximum (231)
+        0x15, 0x00, //   Logical Minimum (0)
+        0x25, 0x01, //   Logical Maximum (1)
+        0x75, 0x01, //   Report Size (1)
+        0x95, 0x08, //   Report Count (8)
+        0x81, 0x02, //   Input (Data,Variable,Absolute) - modifiers
+
+        /* NKRO bitmap (usages 0..119) */
         0x05, 0x07, //   Usage Page (Key Codes)
         0x19, 0x00, //   Usage Minimum (0)
         0x29, 0x77, //   Usage Maximum (119)
