@@ -15,7 +15,6 @@
 
 typedef struct __attribute__((packed))
 {
-    uint8_t count;
     /* modifiers: 8-bit bitmask,
        Bit mapping follows standard HID modifier bitmap:
          bit0: Left Ctrl  (0x01)
@@ -33,6 +32,16 @@ typedef struct __attribute__((packed))
 } KeyMapping;
 
 extern KeyMapping keymap_active[KEY_TOTAL_KEYS];
+
+static inline uint8_t keymap_get_count(const KeyMapping *m)
+{
+    for (uint8_t i = 0; i < MAX_CODE; ++i)
+    {
+        if (m->codes[i] == 0)
+            return i;
+    }
+    return MAX_CODE;
+}
 
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 

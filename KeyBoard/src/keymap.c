@@ -70,7 +70,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
         if (idx < KEY_TOTAL_KEYS)
         {
             const KeyMapping *m = &km[idx];
-            if (m->count == 0 && m->modifiers == 0 && m->type == KEY_TYPE_KEYBOARD)
+            uint8_t count = keymap_get_count(m);
+            if (count == 0 && m->modifiers == 0 && m->type == KEY_TYPE_KEYBOARD)
             {
                 /* 无效映射，跳过 */
                 scan &= scan - 1;
@@ -78,7 +79,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             }
             if (m->type == KEY_TYPE_CONSUMER)
             {
-                for (uint8_t i = 0; i < m->count; i++)
+                for (uint8_t i = 0; i < count; i++)
                 {
                     /* 只收集最多 MAX_CODE（通常为 3）个 consumer usages */
                     if (consumer_total < MAX_CODE)
@@ -90,7 +91,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             else if (m->type == KEY_TYPE_MOUSE_BUTTON)
             {
                 /* 鼠标按钮映射：累积按钮掩码（每个映射可包含多个按钮掩码） */
-                for (uint8_t i = 0; i < m->count; i++)
+                for (uint8_t i = 0; i < count; i++)
                 {
                     mouse_buttons_mask |= (m->codes[i] & 0x1F);
                 }
@@ -104,7 +105,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             {
                 // 累积修饰位（若该物理键带修饰）
                 modifier_bits |= m->modifiers;
-                for (uint8_t i = 0; i < m->count; i++)
+                for (uint8_t i = 0; i < count; i++)
                 {
                     uint8_t code = (uint8_t)(m->codes[i] & 0xFF);
                     /* 在收集阶段限制为 BOOT_KEY_MAX 并去重 */

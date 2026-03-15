@@ -107,7 +107,7 @@ void keymap_loader_load_layer(uint8_t layer)
     for (uint16_t i = 0; i < KEY_TOTAL_KEYS; ++i)
     {
         const KeyMapping *e = &keymap_active[i];
-        PRINT(" Entry %03u: count=%u mods=0x%02X type=%u codes:", (unsigned)i, (unsigned)e->count,
+        PRINT(" Entry %03u: count=%u mods=0x%02X type=%u codes:", (unsigned)i, sizeof(e->codes) / sizeof(e->codes[0]),
               (unsigned)e->modifiers, (unsigned)e->type);
         if (e->type == KEY_TYPE_KEYBOARD)
         {
