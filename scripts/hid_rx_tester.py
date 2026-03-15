@@ -8,7 +8,7 @@ KeyBoard 固件 HID 接收状态机测试脚本。
 
 默认目标 VID/PID 来自 USB 描述符：
     VID = 0x1A86
-    PID = 0xFE00
+    PID = 0x2004
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Optional
 
 import hid
+import traceback
 
 FRAME_TYPE_SINGLE = 0b000
 FRAME_TYPE_START = 0b001
@@ -304,7 +305,7 @@ def run_all(dev: hid.device, timeout_ms: int, crc_mode: str) -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="通过 hidapi 测试 HID 接收状态机")
     parser.add_argument("--vid", type=lambda x: int(x, 0), default=0x1A86, help="USB VID（默认: 0x1A86）")
-    parser.add_argument("--pid", type=lambda x: int(x, 0), default=0xFE00, help="USB PID（默认: 0xFE00）")
+    parser.add_argument("--pid", type=lambda x: int(x, 0), default=0x2004, help="USB PID（默认: 0x2004）")
     parser.add_argument("--timeout-ms", type=int, default=500, help="读取超时（毫秒，默认: 500）")
     parser.add_argument(
         "--crc-mode",
@@ -312,6 +313,18 @@ def parse_args() -> argparse.Namespace:
         default="auto",
         choices=["auto", *CRC_PROFILES.keys()],
         help="CRC 计算模式（默认: auto 自动探测）",
+    )
+    parser.add_argument(
+        "--path",
+        type=str,
+        default=None,
+        help="指定要打开的 HID 设备路径（优先）。可通过枚举输出获取",
+    )
+    parser.add_argument(
+        "--interface",
+        type=int,
+        default=2,
+        help="按枚举中的 interface_number 选择接口（整数），例如 0,1,2...",
     )
     parser.add_argument(
         "--tests",
@@ -326,9 +339,55 @@ def main() -> int:
     args = parse_args()
     dev = hid.device()
     try:
-        dev.open(args.vid, args.pid)
-        dev.set_nonblocking(False)
-        print(f"已打开 HID 设备 VID=0x{args.vid:04X}, PID=0x{args.pid:04X}")
+        # 列举匹配的 HID 设备，帮助诊断 PID/路径 是否正确
+        devs = hid.enumerate(args.vid, args.pid)
+
+        # 如果用户通过 --interface 指定了接口号，先筛选仅匹配该接口的枚举结果
+        if args.interface is not None:
+            filtered = [d for d in devs if d.get("interface_number") == args.interface]
+            print(f"按 interface={args.interface} 筛选枚举设备，匹配到 {len(filtered)} 个")
+            if filtered:
+                devs = filtered
+
+        # 尝试按枚举的 path 逐个打开（优先跳过由系统作为键盘占用的接口）
+        opened = False
+        for i, d in enumerate(devs):
+            path = d.get("path")
+            # 跳过明显被系统键盘占用的路径提示（带 "\\\\KBD" 的路径）
+            if path and b"\\KBD" in path:
+                print(f"  跳过被系统占用的接口 [{i}] {path!r}")
+                continue
+            try:
+                print(f"  尝试打开枚举设备 [{i}] path={path!r} ...")
+                dev.open_path(path)
+                # 非阻塞试读一次以验证设备是否可读（若被系统占用会抛 OSError）
+                dev.set_nonblocking(True)
+                try:
+                    _ = dev.read(1)
+                except OSError as exc:
+                    print(f"    打开后读取失败: {exc}")
+                    try:
+                        dev.close()
+                    except Exception:
+                        pass
+                    continue
+                dev.set_nonblocking(False)
+                print(f"已打开 HID 设备 path={path!r} (index {i})")
+                opened = True
+                break
+            except OSError as exc:
+                print(f"    open_path 失败: {exc}")
+                try:
+                    dev.close()
+                except Exception:
+                    pass
+                continue
+
+        if not opened:
+            print("尝试使用 VID/PID 直接打开（回退）...")
+            dev.open(args.vid, args.pid)
+            dev.set_nonblocking(False)
+            print(f"已打开 HID 设备 VID=0x{args.vid:04X}, PID=0x{args.pid:04X}")
 
         crc_mode = args.crc_mode
         if crc_mode == "auto":
@@ -370,6 +429,7 @@ def main() -> int:
         return 0 if passed == len(selected_tests) else 1
     except OSError as exc:
         print(f"打开设备失败: {exc}")
+        traceback.print_exc()
         return 2
     finally:
         try:
