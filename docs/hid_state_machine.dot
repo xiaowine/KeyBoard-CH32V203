@@ -1,0 +1,46 @@
+// HID 状态机（发送端 & 接收端）
+// 用 Graphviz (DOT) 可视化发送与接收状态机
+
+digraph HID_StateMachines {
+    rankdir=LR;
+    fontsize=12;
+    node [shape=box, fontname="Helvetica"];
+
+    subgraph cluster_tx {
+        label = "发送端 (TX)";
+        color = "#7fb3ff";
+        tx_SEND_IDLE [label="SEND_IDLE\n空闲（等待新发送任务）"];
+        tx_SEND_WAIT_ACK [label="SEND_WAIT_ACK\n等待 ACK（已发帧，等待确认）"];
+        tx_SEND_RETRY [label="SEND_RETRY\n重发（超时或 NACK，重传当前序号）"];
+        tx_SEND_ERROR [label="SEND_ERROR\n错误（重试耗尽/不可恢复）"];
+
+        tx_SEND_IDLE -> tx_SEND_WAIT_ACK [label="StartSend\n(启动发送：SINGLE/START)"];
+        tx_SEND_WAIT_ACK -> tx_SEND_WAIT_ACK [label="RxACK\n(收到 ACK，发送下一个分片)"];
+        tx_SEND_WAIT_ACK -> tx_SEND_IDLE [label="RxACK (complete)\n(任务完成，清理/退出)"];
+        tx_SEND_WAIT_ACK -> tx_SEND_RETRY [label="Timeout / RxNACK\n(超时或收到 NACK)"];
+        tx_SEND_RETRY -> tx_SEND_WAIT_ACK [label="RetrySend\n(重发 curr_seq 帧)"];
+        tx_SEND_WAIT_ACK -> tx_SEND_IDLE [label="RemoteAbort\n(远端 BUSY/OF，中止任务)"];
+        tx_SEND_RETRY -> tx_SEND_IDLE [label="RetryExhaust\n(重试耗尽，放弃)"];
+    }
+
+    subgraph cluster_rx {
+        label = "接收端 (RX)";
+        color = "#b3ffcf";
+        rx_RECEIVE_IDLE [label="RECEIVE_IDLE\n空闲（等待 START/SINGLE）"];
+        rx_RECEIVE_WAIT [label="RECEIVE_WAIT\n接收中（已收到 START，等待 DATA/END）"];
+        rx_RECEIVE_COMPLETE [label="RECEIVE_COMPLETE\n完成（数据就绪，等待上层处理）"];
+        rx_RECEIVE_ERROR [label="RECEIVE_ERROR\n错误（超时或重试耗尽）"];
+
+        rx_RECEIVE_IDLE -> rx_RECEIVE_COMPLETE [label="RxSINGLE\n(单包，seq==0)\n分配缓冲 + 回复 ACK"];
+        rx_RECEIVE_IDLE -> rx_RECEIVE_WAIT [label="RxSTART\n(多包 start，解析 total_size)\n分配缓冲 + 回复 ACK"];
+        rx_RECEIVE_WAIT -> rx_RECEIVE_WAIT [label="RxDATA\n(按序 seq==last+1)\n追加数据 + 回复 ACK"];
+        rx_RECEIVE_WAIT -> rx_RECEIVE_COMPLETE [label="RxEND\n(接收完成，长度匹配)\n回复 ACK"];
+        rx_RECEIVE_WAIT -> rx_RECEIVE_WAIT [label="Duplicate\n(重复 seq==last)\n仅重发 ACK，避免重复写入"];
+        rx_RECEIVE_WAIT -> rx_RECEIVE_ERROR [label="Seq/len/type error\n回复 NACK，retry_cnt++"];
+        rx_RECEIVE_ERROR -> rx_RECEIVE_IDLE [label="reset/cleanup\n释放/复位接收上下文"];
+    }
+
+    // 可选：在两簇之间显示控制帧交互（概念性）
+    tx_SEND_WAIT_ACK -> rx_RECEIVE_WAIT [label="(wire) DATA/START/...", style=dashed];
+    rx_RECEIVE_WAIT -> tx_SEND_WAIT_ACK [label="(wire) ACK/NACK", style=dashed];
+}

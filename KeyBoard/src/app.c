@@ -22,6 +22,8 @@ static volatile uint8_t active_sample_slot = 0;
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 static volatile uint8_t scan_timeout_ticks = 0;
 
+volatile uint8_t hid_comm = 0;
+
 void app_init(void)
 {
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
@@ -113,7 +115,11 @@ void app_init(void)
 
 void app_run(void)
 {
-    hid_comm_process();
+    if (hid_comm)
+    {
+        hid_comm_process();
+        hid_comm = 0;
+    }
     switch (key_scan_state)
     {
     case KEY_STATE_SCANNING:
@@ -197,7 +203,7 @@ RAM INTF void TIM3_IRQHandler(void)
         {
             scan_timeout_ticks++;
         }
-        // kb_send_snapshot(last_snapshot);
+        kb_send_snapshot(last_snapshot);
         TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
     }
 }
@@ -206,7 +212,7 @@ RAM INTF void TIM4_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
     {
-        // hid_comm_send(last_snapshot, HC165_COUNT);
+        hid_comm = 1;
         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
     }
 }

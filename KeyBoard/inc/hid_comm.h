@@ -20,67 +20,72 @@
 
 /* 重试上限：连续 NACK 超过该值则丢弃当前接收任务 */
 #define HID_RETRY_LIMIT 5U
+/* 最大动态接收缓冲（24 * 256 = 6144 字节） */
+#define HID_RECEIVE_MAX_CAPACITY (sizeof(((HidFrame_t *)0)->payload) * 256U)
 
 typedef struct PACKED
 {
     struct
     {
-        uint8_t len : 5; // Bit 0-4: 有效长度 (0-24)
+        uint8_t len : 5;  // Bit 0-4: 有效长度 (0-24)
         uint8_t type : 3; // Bit 5-7: 包类型
     } ctrl;
 
-    uint8_t data_type; // 业务类型
-    uint8_t seq; // 序列号
-    uint8_t reserved; // 保留字节 (确保后面 4 字节对齐)
+    uint8_t data_type;   // 业务类型
+    uint8_t seq;         // 序列号
+    uint8_t reserved;    // 保留字节 (确保后面 4 字节对齐)
     uint8_t payload[24]; // 负载
-    uint32_t crc32; // 硬件 CRC32
+    uint32_t crc32;      // 硬件 CRC32
 } HidFrame_t;
 
 typedef enum
 {
     SEND_IDLE = 0, // 空闲：等待新任务
-    SEND_START, // 起始：已发出 START 包，等待 ACK
+    SEND_START,    // 起始：已发出 START 包，等待 ACK
     SEND_WAIT_ACK, // 等待：已发出，等待接收方回复 ACK
-    SEND_RETRY, // 重发：已发出，等待 ACK 超时，正在重试
-    SEND_ERROR // 错误：重试耗尽，任务失败
+    SEND_RETRY,    // 重发：已发出，等待 ACK 超时，正在重试
+    SEND_ERROR     // 错误：重试耗尽，任务失败
 } SendState_t;
 
 typedef enum
 {
     RECEIVE_IDLE = 0, // 空闲：等待 START 或 SINGLE 包
-    RECEIVE_WAIT, // 接收中：已收到 START，正在拼装 DATA 包
+    RECEIVE_WAIT,     // 接收中：已收到 START，正在拼装 DATA 包
     RECEIVE_COMPLETE, // 完成：已收到 END 包，数据完整
-    RECEIVE_ERROR, // 错误：超时或重试耗尽，丢弃当前数据
+    RECEIVE_ERROR,    // 错误：超时或重试耗尽，丢弃当前数据
 } ReceiveState_t;
 
 typedef struct
 {
-    const uint8_t* p_buf; // 待发送数据指针 (4字节对齐)
-    uint16_t total_len; // 任务总长度 (0~6144 字节)
-    uint16_t sent_len; // 已发送累计长度
-    SendState_t state; // 当前发送状态机状态
-    uint8_t data_type; // 业务负载类型
-    uint8_t curr_seq; // 当前帧序列号 (0-255)
+    const uint8_t *p_buf; // 待发送数据指针 (4字节对齐)
+    uint16_t total_len;   // 任务总长度 (0~6144 字节)
+    uint16_t sent_len;    // 已发送累计长度
+    SendState_t state;    // 当前发送状态机状态
+    uint8_t data_type;    // 业务负载类型
+    uint8_t curr_seq;     // 当前帧序列号 (0-255)
     volatile struct
     {
-        uint8_t ack_flag : 1; // Bit 0: 接收标志
+        uint8_t ack_flag : 1;  // Bit 0: 接收标志
         uint8_t retry_cnt : 7; // Bit 1-7: 重试计数 (0-127)
     } status;
+    uint8_t timeout_ticks; // 发送等待 ACK 的超时计数（以 hid_comm_process 调用次数为单位）
 } SendHandle_t;
 
 typedef struct
 {
-    uint8_t* p_buf; // 接收缓冲区指针 (通常由应用层传入)
-    uint16_t capacity; // 缓冲区总容量
-    uint16_t total_len; // 预期总长度 (从 START 包的 len 字段获取)
-    uint16_t recved_len; // 当前已累计接收的长度
+    uint8_t *p_buf;       // 接收缓冲区指针 (通常由应用层传入)
+    uint16_t capacity;    // 缓冲区总容量
+    uint16_t total_len;   // 预期总长度 (从 START 包的 len 字段获取)
+    uint16_t recved_len;  // 当前已累计接收的长度
     ReceiveState_t state; // 当前接收状态机
-    uint8_t data_type; // 当前传输的任务类型
-    uint8_t last_seq; // 上一次成功接收的序列号 (用于去重)
-    uint8_t retry_cnt; // 接收侧重试计数（连续 NACK 次数）
+    uint8_t data_type;    // 当前传输的任务类型
+    uint8_t last_seq;     // 上一次成功接收的序列号 (用于去重)
+    uint8_t retry_cnt;    // 接收侧重试计数（连续 NACK 次数）
 } ReceiveHandle_t;
 
-uint8_t hid_comm_send(const uint8_t* data, uint16_t len);
 void hid_comm_process(void);
+// 非阻塞启动一次发送任务（0=成功，1=失败 e.g. busy）
+uint8_t hid_comm_start_send(const uint8_t *data, uint16_t len, uint8_t data_type);
+// 库会在接收到 START/SINGLE 时按需分配接收缓冲，应用无需注册缓冲区。
 
 #endif
