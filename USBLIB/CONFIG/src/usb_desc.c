@@ -22,9 +22,9 @@ const uint8_t USBD_DeviceDescriptor[] = {
     0x00,               // bDeviceProtocol
     DEF_USBD_UEP0_SIZE, // bMaxPacketSize0
     0x86,
-    0x1A, // idVendor
-    0x00,
-    0xFE, // idProduct
+    0x1a, // idVendor
+    0x04,
+    0x20, // idProduct
     0x00,
     0x01, // bcdDevice
     0x01, // iManufacturer
@@ -221,13 +221,13 @@ const uint8_t USBD_StringLangID[USBD_SIZE_STRING_LANGID] = {
 const uint8_t USBD_StringVendor[USBD_SIZE_STRING_VENDOR] = {
     USBD_SIZE_STRING_VENDOR,
     USB_STRING_DESCRIPTOR_TYPE,
-    'w', 0, 'c', 0, 'h', 0, '.', 0, 'c', 0, 'n', 0};
+    'W', 0, 'i', 0, 'n', 0, 'e', 0, 'R', 0, 'e', 0, 'a', 0, 'l', 0, 'm', 0};
 
 /* USB Device String Product */
 const uint8_t USBD_StringProduct[USBD_SIZE_STRING_PRODUCT] = {
     USBD_SIZE_STRING_PRODUCT,
     USB_STRING_DESCRIPTOR_TYPE,
-    'C', 0, 'H', 0, '3', 0, '2', 0, 'V', 0, '2', 0, '0', 0, 'x', 0};
+    'K', 0, 'e', 0, 'y', 0, 'W', 0, 'i', 0, 'n', 0, 'e', 0};
 
 /* USB Device String Serial */
 uint8_t USBD_StringSerial[USBD_SIZE_STRING_SERIAL] = {
