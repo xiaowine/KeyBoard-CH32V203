@@ -24,6 +24,7 @@ static volatile uint8_t scan_timeout_ticks = 0;
 
 void app_init(void)
 {
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
 

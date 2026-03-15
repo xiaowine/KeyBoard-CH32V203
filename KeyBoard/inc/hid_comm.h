@@ -18,6 +18,9 @@
 #define DATA_TYPE_KEY 0    // 键位状态数据
 #define DATA_TYPE_KEYMAP 1 // 键位映射数据
 
+/* RX 重试上限：连续 NACK 超过该值则丢弃当前接收任务 */
+#define HID_RX_RETRY_LIMIT 5U
+
 typedef struct PACKED
 {
   struct
@@ -74,6 +77,7 @@ typedef struct
   RXState_t state;     // 当前接收状态机
   uint8_t data_type;   // 当前传输的任务类型
   uint8_t last_seq;    // 上一次成功接收的序列号 (用于去重)
+  uint8_t retry_cnt;   // 接收侧重试计数（连续 NACK 次数）
 } RXHandle_t;
 
 static TXHandle_t hTxHid; // 全局发送句柄

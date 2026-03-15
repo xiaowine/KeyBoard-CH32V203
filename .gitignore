@@ -2,3 +2,4 @@ obj/
 .mrs/
 #.idea/
 cmake-build-*/
+*.pyc
