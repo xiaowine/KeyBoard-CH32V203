@@ -16,7 +16,7 @@
 #include "utils.h"
 
 volatile uint8_t USBD_EndpBusy[EP_NUM + 1]; /* index 0 unused, use 1..EP_NUM */
-uint16_t USB_Rx_Cnt = 0;
+volatile uint16_t USB_Rx_Cnt = 0;
 volatile uint8_t USBD_HId_Comm_Data_Buffer[DEF_ENDP_SIZE_CUSTOM] = {0}; // HID communication data buffer
 
 /*********************************************************************

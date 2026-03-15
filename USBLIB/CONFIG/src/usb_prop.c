@@ -215,12 +215,14 @@ void USBD_Reset(void)
 
     SetEPType(ENDP1, EP_INTERRUPT);
     SetEPTxAddr(ENDP1, ENDP1_TXADDR);
+    SetEPTxCount(ENDP1, DEF_ENDP_SIZE_KB);
     SetEPTxStatus(ENDP1, EP_TX_NAK);
     _ClearDTOG_TX(ENDP1);
     _ClearDTOG_RX(ENDP1);
 
     SetEPType(ENDP2, EP_INTERRUPT);
     SetEPTxAddr(ENDP2, ENDP2_TXADDR);
+    SetEPTxCount(ENDP2, DEF_ENDP_SIZE_NKRO);
     SetEPTxStatus(ENDP2, EP_TX_NAK);
     _ClearDTOG_TX(ENDP2);
     _ClearDTOG_RX(ENDP2);
@@ -229,6 +231,8 @@ void USBD_Reset(void)
     SetEPType(ENDP3, EP_INTERRUPT);
     SetEPTxAddr(ENDP3, ENDP3_TXADDR);
     SetEPRxAddr(ENDP3, ENDP3_RXADDR);
+    SetEPTxCount(ENDP3, DEF_ENDP_SIZE_CUSTOM);
+    SetEPRxCount(ENDP3, DEF_ENDP_SIZE_CUSTOM);
     SetEPTxStatus(ENDP3, EP_TX_NAK);
     SetEPRxStatus(ENDP3, EP_RX_VALID);
     _ClearDTOG_TX(ENDP3);
@@ -237,6 +241,7 @@ void USBD_Reset(void)
     /* Initialize Consumer endpoint on ENDP4 (IN) */
     SetEPType(ENDP4, EP_INTERRUPT);
     SetEPTxAddr(ENDP4, ENDP4_TXADDR);
+    SetEPTxCount(ENDP4, DEF_ENDP_SIZE_CONSUMER);
     SetEPTxStatus(ENDP4, EP_TX_NAK);
     _ClearDTOG_TX(ENDP4);
     _ClearDTOG_RX(ENDP4);
@@ -244,6 +249,7 @@ void USBD_Reset(void)
     /* Initialize Mouse endpoint on ENDP5 (IN, Boot Mouse) */
     SetEPType(ENDP5, EP_INTERRUPT);
     SetEPTxAddr(ENDP5, ENDP5_TXADDR);
+    SetEPTxCount(ENDP5, DEF_ENDP_SIZE_MOUSE);
     SetEPTxStatus(ENDP5, EP_TX_NAK);
     _ClearDTOG_TX(ENDP5);
     _ClearDTOG_RX(ENDP5);
