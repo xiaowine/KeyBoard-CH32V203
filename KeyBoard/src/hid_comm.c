@@ -10,7 +10,7 @@
 #include "usb_endp.h"
 #include "debug.h"
 
-SendHandle_t hSendHid = {0}; // 全局发送句柄
+SendHandle_t hSendHid = {0};       // 全局发送句柄
 ReceiveHandle_t hReceiveHid = {0}; // 全局接收句柄
 
 /* 接收重组缓冲区：最大 256 帧 * 24 字节 Payload = 6144 字节 */
@@ -47,7 +47,7 @@ static void hid_comm_reset_receive(void)
  * receive 失败计数：在可重试场景（如 seq/type/长度不匹配）中累计。
  * 达到上限后，丢弃当前接收任务，避免状态机长期卡住。
  */
-static void hid_comm_on_receive_retry_fail(const HidFrame_t* frame)
+static void hid_comm_on_receive_retry_fail(const HidFrame_t *frame)
 {
     if (hReceiveHid.retry_cnt < 0xFFU)
     {
@@ -67,12 +67,12 @@ static void hid_comm_on_receive_retry_fail(const HidFrame_t* frame)
  * - 协议定义 CRC 覆盖 Offset 0~27（共 28 字节）
  * - 这里按 7 个 32-bit word 喂给硬件 CRC 外设
  */
-static uint8_t hid_comm_check_crc(const HidFrame_t* frame)
+static uint8_t hid_comm_check_crc(const HidFrame_t *frame)
 {
     volatile uint32_t crc_words[7];
-    memcpy((void*)crc_words, frame, 28U);
+    memcpy((void *)crc_words, frame, 28U);
     CRC_ResetDR();
-    uint32_t calc = CRC_CalcBlockCRC((uint32_t*)crc_words, 7U);
+    uint32_t calc = CRC_CalcBlockCRC((uint32_t *)crc_words, 7U);
     return (calc == frame->crc32) ? 1U : 0U;
 }
 
@@ -97,7 +97,7 @@ static uint8_t hid_comm_send_ctrl_frame(uint8_t frame_type, uint8_t data_type, u
     CRC_ResetDR();
     tx_frame.crc32 = CRC_CalcBlockCRC(crc_words, 7U);
 
-    return hid_comm_send((const uint8_t*)&tx_frame, sizeof(HidFrame_t));
+    return hid_comm_send((const uint8_t *)&tx_frame, sizeof(HidFrame_t));
 }
 
 /*********************************************************************
@@ -110,7 +110,7 @@ static uint8_t hid_comm_send_ctrl_frame(uint8_t frame_type, uint8_t data_type, u
  *
  * @return  Status (0=success, 1=error)
  */
-uint8_t hid_comm_send(const uint8_t* data, const uint16_t len)
+uint8_t hid_comm_send(const uint8_t *data, const uint16_t len)
 {
     return USBD_SendCustomData(data, len);
 }
@@ -143,7 +143,7 @@ void hid_comm_process(void)
         /* 无新包或包长异常：直接返回，不阻塞主循环 */
         return;
     }
-    const HidFrame_t* frame = (const HidFrame_t*)rx_buffer;
+    const HidFrame_t *frame = (const HidFrame_t *)rx_buffer;
     const uint8_t frame_type = frame->ctrl.type;
     const uint8_t frame_len = frame->ctrl.len;
 
@@ -212,6 +212,13 @@ void hid_comm_process(void)
     {
     case FRAME_TYPE_SINGLE:
         /* 单包：payload 直接作为完整任务数据 */
+        /* 协议限制：单包任务的 seq 必须为 0 */
+        if (frame->seq != 0U)
+        {
+            PRINT("HID RX error: SINGLE frame seq must be 0, got=%d\r\n", frame->seq);
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            return;
+        }
         if (frame_len > hReceiveHid.capacity)
         {
             hReceiveHid.state = RECEIVE_ERROR;
@@ -232,90 +239,98 @@ void hid_comm_process(void)
         break;
 
     case FRAME_TYPE_START:
+    {
+        /* 协议限制：START 包的 seq 必须为 0 */
+        if (frame->seq != 0U)
         {
-            /* START 约定：payload 前 4 字节为 total_size（小端） */
-            uint32_t total_size = 0U;
-            if (frame_len < 4U)
-            {
-                hReceiveHid.state = RECEIVE_ERROR;
-                hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                return;
-            }
-
-            memcpy(&total_size, frame->payload, sizeof(total_size));
-            if (total_size == 0U || total_size > hReceiveHid.capacity)
-            {
-                hReceiveHid.state = RECEIVE_ERROR;
-                hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                return;
-            }
-
-            hReceiveHid.total_len = (uint16_t)total_size;
-            hReceiveHid.recved_len = 0U;
-            hReceiveHid.data_type = frame->data_type;
-            hReceiveHid.last_seq = frame->seq;
-            hReceiveHid.state = RECEIVE_WAIT;
-            hReceiveHid.retry_cnt = 0U;
-            hid_comm_send_ctrl_frame(FRAME_TYPE_ACK, frame->data_type, frame->seq);
-            break;
+            PRINT("HID RX error: START frame seq must be 0, got=%d\r\n", frame->seq);
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            hid_comm_on_receive_retry_fail(frame);
+            return;
         }
+        /* START 约定：payload 前 4 字节为 total_size（小端） */
+        uint32_t total_size = 0U;
+        if (frame_len < 4U)
+        {
+            hReceiveHid.state = RECEIVE_ERROR;
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            return;
+        }
+
+        memcpy(&total_size, frame->payload, sizeof(total_size));
+        if (total_size == 0U || total_size > hReceiveHid.capacity)
+        {
+            hReceiveHid.state = RECEIVE_ERROR;
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            return;
+        }
+
+        hReceiveHid.total_len = (uint16_t)total_size;
+        hReceiveHid.recved_len = 0U;
+        hReceiveHid.data_type = frame->data_type;
+        hReceiveHid.last_seq = frame->seq;
+        hReceiveHid.state = RECEIVE_WAIT;
+        hReceiveHid.retry_cnt = 0U;
+        hid_comm_send_ctrl_frame(FRAME_TYPE_ACK, frame->data_type, frame->seq);
+        break;
+    }
 
     case FRAME_TYPE_DATA:
     case FRAME_TYPE_END:
+    {
+        /* DATA/END 必须严格按顺序到达：seq = last_seq + 1 */
+        const uint8_t expect_seq = (uint8_t)(hReceiveHid.last_seq + 1U);
+        if (hReceiveHid.state != RECEIVE_WAIT)
         {
-            /* DATA/END 必须严格按顺序到达：seq = last_seq + 1 */
-            const uint8_t expect_seq = (uint8_t)(hReceiveHid.last_seq + 1U);
-            if (hReceiveHid.state != RECEIVE_WAIT)
-            {
-                hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                return;
-            }
-
-            if (frame->seq != expect_seq || frame->data_type != hReceiveHid.data_type)
-            {
-                /* 可重试错误：保持 RX_WAIT，不丢上下文，等待对端按 NACK 重发 */
-                hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                hid_comm_on_receive_retry_fail(frame);
-                return;
-            }
-
-            /* 长度保护：累计接收长度不能超过 START 声明长度 */
-            if ((uint32_t)hReceiveHid.recved_len + (uint32_t)frame_len > (uint32_t)hReceiveHid.total_len)
-            {
-                hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                hid_comm_on_receive_retry_fail(frame);
-                return;
-            }
-
-            /* END 包要求正好收满 total_len；不满足则请求该帧重发 */
-            if (frame_type == FRAME_TYPE_END &&
-                ((uint32_t)hReceiveHid.recved_len + (uint32_t)frame_len != (uint32_t)hReceiveHid.total_len))
-            {
-                hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                hid_comm_on_receive_retry_fail(frame);
-                return;
-            }
-
-            if (frame_len > 0U)
-            {
-                /* 复制本帧有效 payload 到重组缓冲区 */
-                memcpy(&hReceiveHid.p_buf[hReceiveHid.recved_len], frame->payload, frame_len);
-            }
-            hReceiveHid.recved_len = (uint16_t)(hReceiveHid.recved_len + frame_len);
-            hReceiveHid.last_seq = frame->seq;
-            hReceiveHid.retry_cnt = 0U;
-
-            if (frame_type == FRAME_TYPE_END)
-            {
-                hReceiveHid.state = RECEIVE_COMPLETE;
-                hid_comm_send_ctrl_frame(FRAME_TYPE_ACK, frame->data_type, frame->seq);
-            }
-            else
-            {
-                hid_comm_send_ctrl_frame(FRAME_TYPE_ACK, frame->data_type, frame->seq);
-            }
-            break;
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            return;
         }
+
+        if (frame->seq != expect_seq || frame->data_type != hReceiveHid.data_type)
+        {
+            /* 可重试错误：保持 RX_WAIT，不丢上下文，等待对端按 NACK 重发 */
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            hid_comm_on_receive_retry_fail(frame);
+            return;
+        }
+
+        /* 长度保护：累计接收长度不能超过 START 声明长度 */
+        if ((uint32_t)hReceiveHid.recved_len + (uint32_t)frame_len > (uint32_t)hReceiveHid.total_len)
+        {
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            hid_comm_on_receive_retry_fail(frame);
+            return;
+        }
+
+        /* END 包要求正好收满 total_len；不满足则请求该帧重发 */
+        if (frame_type == FRAME_TYPE_END &&
+            ((uint32_t)hReceiveHid.recved_len + (uint32_t)frame_len != (uint32_t)hReceiveHid.total_len))
+        {
+            hid_comm_send_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            hid_comm_on_receive_retry_fail(frame);
+            return;
+        }
+
+        if (frame_len > 0U)
+        {
+            /* 复制本帧有效 payload 到重组缓冲区 */
+            memcpy(&hReceiveHid.p_buf[hReceiveHid.recved_len], frame->payload, frame_len);
+        }
+        hReceiveHid.recved_len = (uint16_t)(hReceiveHid.recved_len + frame_len);
+        hReceiveHid.last_seq = frame->seq;
+        hReceiveHid.retry_cnt = 0U;
+
+        if (frame_type == FRAME_TYPE_END)
+        {
+            hReceiveHid.state = RECEIVE_COMPLETE;
+            hid_comm_send_ctrl_frame(FRAME_TYPE_ACK, frame->data_type, frame->seq);
+        }
+        else
+        {
+            hid_comm_send_ctrl_frame(FRAME_TYPE_ACK, frame->data_type, frame->seq);
+        }
+        break;
+    }
 
     default:
         /* 未定义帧类型 */

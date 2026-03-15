@@ -214,7 +214,7 @@ def expect_ctrl(dev: hid.device, exp_type: int, exp_seq: int, exp_data_type: int
 
 
 def test_single_ok(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
-    seq = 1
+    seq = 0
     payload = b"hello-hid-rx"
     frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, payload, crc_mode=crc_mode)
     write_frame(dev, frame)
@@ -222,7 +222,7 @@ def test_single_ok(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
 
 
 def test_crc_error_nack(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
-    seq = 2
+    seq = 0
     payload = b"crc-bad"
     frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, payload, crc_mode=crc_mode, bad_crc=True)
     write_frame(dev, frame)
@@ -230,7 +230,7 @@ def test_crc_error_nack(dev: hid.device, timeout_ms: int, crc_mode: str) -> None
 
 
 def test_segment_retry_recovery(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
-    seq_start = 10
+    seq_start = 0
     data = bytes(range(30))
 
     # START：payload[0:4] = total_size（小端）
@@ -256,11 +256,30 @@ def test_segment_retry_recovery(dev: hid.device, timeout_ms: int, crc_mode: str)
     expect_ctrl(dev, FRAME_TYPE_ACK, seq_end, DATA_TYPE_KEY, timeout_ms)
 
 
+def test_single_invalid_seq(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
+    """发送单包但 seq != 0，应收到 NACK"""
+    seq = 5
+    payload = b"bad-seq-single"
+    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, payload, crc_mode=crc_mode)
+    write_frame(dev, frame)
+    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_KEY, timeout_ms)
+
+
+def test_start_invalid_seq(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
+    """发送 START 但 seq != 0，应收到 NACK"""
+    seq = 3
+    total_data = bytes(range(10))
+    start_payload = len(total_data).to_bytes(4, "little")
+    write_frame(dev, build_frame(FRAME_TYPE_START, DATA_TYPE_KEY, seq, start_payload, crc_mode=crc_mode))
+    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_KEY, timeout_ms)
+
+
 def auto_detect_crc_mode(dev: hid.device, timeout_ms: int) -> str:
     """自动探测能让设备返回 ACK 的 CRC 配置。"""
     probe_payload = b"crc-probe"
     for idx, mode in enumerate(CRC_PROFILES.keys()):
-        seq = (0x60 + idx) & 0xFF
+        # 按协议要求，单次任务的 seq 必须以 0 开头；每次探测前会 flush_input()
+        seq = 0
         flush_input(dev)
         frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, probe_payload, crc_mode=mode)
         write_frame(dev, frame)
@@ -283,6 +302,8 @@ def run_all(dev: hid.device, timeout_ms: int, crc_mode: str) -> int:
         "single_ok": test_single_ok,
         "crc_error_nack": test_crc_error_nack,
         "segment_retry_recovery": test_segment_retry_recovery,
+        "single_invalid_seq": test_single_invalid_seq,
+        "start_invalid_seq": test_start_invalid_seq,
     }
 
     # 默认运行全部
@@ -401,6 +422,8 @@ def main() -> int:
             "single_ok": test_single_ok,
             "crc_error_nack": test_crc_error_nack,
             "segment_retry_recovery": test_segment_retry_recovery,
+            "single_invalid_seq": test_single_invalid_seq,
+            "start_invalid_seq": test_start_invalid_seq,
         }
 
         if tests_arg.lower() == "all":
