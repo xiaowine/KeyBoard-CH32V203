@@ -13,7 +13,7 @@ HID 通信实现解读（基于 KeyBoard/src/hid_comm.c）
 1. 应用调用 `hid_comm_start_send(data, len, data_type)` 启动任务。
 2. 若 len<=24：构造 SINGLE 并发送，state->SEND_WAIT_ACK，等待 ACK 完成后调用 `hid_comm_abort_send()` 清理。
 3. 若 len>24：发送 START（首段为最多 20 字节），sent_len 记录已发送字节，state->SEND_WAIT_ACK；收到 ACK 后由 `hid_comm_process_send()` 继续按 payload 大小分片发送 DATA/END，seq 递增。
-4. 超时与重传：若在 SEND_WAIT_ACK 超时，进入 SEND_RETRY，重发对应 curr_seq 帧；重试次数超过 `HID_RETRY_LIMIT` 则中止任务。
+4. 超时与重传：若在 `SEND_WAIT_ACK` 超时，进入 `SEND_RETRY`，重发对应 `curr_seq` 帧；当重试次数达到 `HID_RETRY_LIMIT` 时，发送端会先进入 `SEND_ERROR`（以便上层/日志能观察到错误态），在下一次 `hid_comm_process_send()` 调用时由 `SEND_ERROR` 分支执行清理（调用 `hid_comm_abort_send()`）并恢复到 `SEND_IDLE`，从而完成中止任务的流程。
 5. 收到远端 `NACK` 会触发进入重发；收到 `BUSY`/`OF`（且 seq 匹配）会直接中止。
 
 四、接收流程（关键点）

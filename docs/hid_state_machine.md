@@ -23,7 +23,9 @@ HID 通信状态机说明（发送端与接收端）
   - 动作：把 `status.retry_cnt++`（上限 0x7F 限制），state->`SEND_RETRY`。
 
 - Timeout（在 `SEND_WAIT_ACK` 超时计数达到阈值）
-  - 动作：若 `status.retry_cnt` 超过 `HID_RETRY_LIMIT` -> 打印并 `hid_comm_abort_send()`；否则 `status.retry_cnt++` 并 state->`SEND_RETRY`。
+  - 动作：当发生超时时，先检查 `status.retry_cnt`。
+    - 如果 `status.retry_cnt < HID_RETRY_LIMIT`：将 `status.retry_cnt++`，并把状态设为 `SEND_RETRY`，以重发当前 `curr_seq` 帧。
+    - 如果 `status.retry_cnt >= HID_RETRY_LIMIT`：将状态设为 `SEND_ERROR`（使错误态可被日志或监控观察）；在下一次调用 `hid_comm_process_send()` 时，`SEND_ERROR` 分支会调用 `hid_comm_abort_send()` 做清理并将状态恢复到 `SEND_IDLE`。
 
 - RetrySend（处于 `SEND_RETRY`）
   - 条件：任何需要重发的帧（curr_seq）
@@ -86,7 +88,8 @@ SEND_IDLE --(StartSend)--> SEND_WAIT_ACK
 SEND_WAIT_ACK --(RxACK)--> SEND_WAIT_ACK (next frame) / SEND_IDLE (完成)
 SEND_WAIT_ACK --(Timeout/NACK)--> SEND_RETRY
 SEND_RETRY --(RetrySend)--> SEND_WAIT_ACK
-SEND_WAIT_ACK --(RetryExhaust)--> SEND_IDLE (abort)
+SEND_WAIT_ACK --(RetryExhaust)--> SEND_ERROR
+SEND_ERROR --(Abort on next tick)--> SEND_IDLE (abort)
 SEND_WAIT_ACK --(RemoteAbort BUSY/OF)--> SEND_IDLE (abort)
 
 接收端（简化）:

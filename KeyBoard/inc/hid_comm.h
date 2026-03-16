@@ -14,14 +14,30 @@
 #define FRAME_TYPE_NACK 0b101   // NACK包，表示接收方对某个包的否认
 #define FRAME_TYPE_BUSY 0b110   // BUSY包，表示接收方忙碌，无法处理当前包
 #define FRAME_TYPE_OF 0b111     // 溢出包，表示发送方的缓冲区溢出或其他错误
+
 // 数据类型宏定义
-#define DATA_TYPE_KEY 0    // 键位状态数据
-#define DATA_TYPE_KEYMAP 1 // 键位映射数据
+#define DATA_TYPE_KEY 0                  // 键位状态数据
+#define DATA_TYPE_LAYER_KEYMAP 1         // 键位映射数据
+#define DATA_TYPE_GET_KEY 2              // 获取键位状态数据
+#define DATA_TYPE_GET_LAYER_KEYMAP 3     // 获取层键位映射数据
+#define DATA_TYPE_GET_ALL_LAYER_KEYMAP 4 // 获取全部层键位映射数据
 
 /* 重试上限：连续 NACK 超过该值则丢弃当前接收任务 */
 #define HID_RETRY_LIMIT 5U
 /* 最大动态接收缓冲（24 * 256 = 6144 字节） */
 #define HID_RECEIVE_MAX_CAPACITY (sizeof(((HidFrame_t *)0)->payload) * 256U)
+
+// ---------------- Reason Codes ----------------
+// 用于 HidComm_EventParam_t.reason，便于统一管理和可读性
+#define HID_COMM_REASON_INVALID_LEN 1U           // 数据包长度无效
+#define HID_COMM_REASON_CRC_ERROR 2U             // CRC 校验失败
+#define HID_COMM_REASON_CAPACITY_EXCEEDED 3U     // 接收缓冲区容量超限
+#define HID_COMM_REASON_MALLOC_FAIL 4U           // 动态内存分配失败
+#define HID_COMM_REASON_START_HEADER_SHORT 5U    // START 包头长度不足
+#define HID_COMM_REASON_INVALID_TOTAL_SIZE 6U    // 总长度字段无效
+#define HID_COMM_REASON_INSUFFICIENT_CAPACITY 7U // 应用层缓冲区不足
+#define HID_COMM_REASON_RETRY_EXHAUSTED 8U       // 接收侧重试耗尽
+#define HID_COMM_REASON_TX_RETRY_EXHAUSTED 10U   // 发送侧重试耗尽
 
 typedef struct PACKED
 {
@@ -83,8 +99,33 @@ typedef struct
     uint8_t retry_cnt;    // 接收侧重试计数（连续 NACK 次数）
 } ReceiveHandle_t;
 
+// ---------------- Callback API ----------------
+typedef enum
+{
+    HID_COMM_EVT_RX_COMPLETE = 0, // 接收完成：参数包含 data pointer + len + data_type
+    HID_COMM_EVT_RX_ERROR,        // 接收出错：参数包含可能的 data_type/seq/reason
+    HID_COMM_EVT_TX_COMPLETE,     // 发送完成：参数包含 data_type/len
+    HID_COMM_EVT_TX_ERROR,        // 发送错误：参数包含 reason
+    HID_COMM_EVT_TX_ABORT         // 发送被远端中止（BUSY/OF）
+} HidComm_Event_t;
+
+typedef struct
+{
+    uint8_t data_type; // 业务类型
+    uint8_t *p;        // 指向接收数据（仅对 RX_COMPLETE 有效）
+    uint16_t len;      // 长度（RX_COMPLETE/TX_COMPLETE）
+    uint8_t seq;       // 相关序号（有时有效）
+    uint8_t reason;    // 错误原因码（如果有）
+} HidComm_EventParam_t;
+
+typedef void (*hid_comm_callback_t)(HidComm_Event_t evt, const HidComm_EventParam_t *param);
+
+// 注册回调，传入 NULL 将取消注册
+void hid_comm_register_callback(hid_comm_callback_t cb);
+
 void hid_comm_process(void);
 // 非阻塞启动一次发送任务（0=成功，1=失败 e.g. busy）
+
 uint8_t hid_comm_start_send(const uint8_t *data, uint16_t len, uint8_t data_type);
 // 库会在接收到 START/SINGLE 时按需分配接收缓冲，应用无需注册缓冲区。
 

@@ -24,15 +24,15 @@
 ## 关键数据结构（来自头文件）
 - `HidFrame_t`：协议帧结构（32B）。
 - `TXHandle_t`/`RXHandle_t`：TX/RX 状态句柄，分别记录发送任务与接收重组状态。
-- 全局句柄：`hTxHid`（发送），`hRxHid`（接收）。
+- 全局句柄：`hSendHid`（发送），`hReceiveHid`（接收）。
 
 ## 全局缓冲与硬件依赖
 - `rx_buffer[32]`：一帧临时接收缓冲。
-- `rx_task_buffer[24 * 256]`：重组缓冲（6144B），默认绑定到 `hRxHid.p_buf`。
+- `rx_task_buffer[24 * 256]`：重组缓冲（6144B），默认绑定到 `hReceiveHid.p_buf`。
 - CRC 由硬件 `CRC_CalcBlockCRC` 计算（需要硬件 CRC 外设）。
 
 ## 使用入口（API）
-- `uint8_t hid_comm_send(const uint8_t *data, uint16_t len)`：发送 32B 报文，底层调用 `USBD_SendCustomData`。
+- `uint8_t hid_comm_start_send(const uint8_t *data, uint16_t len)`：启动一次非阻塞发送任务，底层调用 `USBD_SendCustomData`。
 - `void hid_comm_process(void)`：主处理函数，需在主循环或定时器中周期调用以处理收到的帧并驱动状态机。
 
 ## 核心函数逐步解读：`hid_comm_process()`
@@ -40,7 +40,7 @@
 以下按执行顺序逐步说明代码逻辑，便于没有上下文的人理解每一个决策点。
 
 1) 懒初始化 RX 句柄
-- 首次调用将 `hRxHid.p_buf` 指向 `rx_task_buffer`，并设定 `capacity = 6144`、`last_seq = 0xFF`、`state = RX_IDLE`。
+- 首次调用将 `hReceiveHid.p_buf` 指向 `rx_task_buffer`，并设定 `capacity = 6144`、`last_seq = 0xFF`、`state = RX_IDLE`。
 - 目的：保证接收端有默认重组缓冲，方便上层直接取数据。
 
 2) 读取一帧
@@ -53,20 +53,20 @@
 - CRC 错误或长度非法时，发送 `NACK` 给对端并返回。
 
 4) 控制帧的优先处理（ACK / NACK）
-- 若收到 `ACK`/`NACK`：检查是否为当前发送任务相关（seq 匹配 `hTxHid.curr_seq`）并修改 `hTxHid`：
+  若收到 `ACK`/`NACK`：检查是否为当前发送任务相关（seq 匹配 `hSendHid.curr_seq`）并修改 `hSendHid`：
   - `ACK` -> 标记 `ack_flag = 1`（发送方可推进到下一帧或结束）。
   - `NACK` -> `ack_flag = 0`，增加重试计数并把 `state` 置为 `TX_RETRY`。
 - 处理完控制帧后返回，不进入数据处理分支。
 
 5) 远端 BUSY / OF
-- 若收到 `BUSY` 或 `OF` 且与当前 TX seq 匹配，则调用 `hid_comm_abort_tx()` 放弃本次发送任务（清除发送句柄）。
+- 若收到 `BUSY` 或 `OF` 且与当前 TX seq 匹配，则调用 `hid_comm_abort_send()` 放弃本次发送任务（清除发送句柄）。
 
 6) 去重逻辑（防止重复写入）
 - 场景：处于 `RX_WAIT`（多包传输中），对端重发上一个 DATA/END（seq == last_seq），这通常是因为 ACK 丢失。
 - 实现：此时不重复写入 payload，只重新发送 `ACK` 给对端，避免数据重复拼接。
 
 7) 各帧类型处理
-- `FRAME_TYPE_SINGLE`：单帧任务，payload 直接拷贝到 `hRxHid.p_buf`，设置 `total_len=recved_len=frame_len`，`state=RX_COMPLETE`，发送 `ACK`。
+  `FRAME_TYPE_SINGLE`：单帧任务，payload 直接拷贝到 `hReceiveHid.p_buf`，设置 `total_len=recved_len=frame_len`，`state=RX_COMPLETE`，发送 `ACK`。
 - `FRAME_TYPE_START`：多帧开始，payload 前 4 字节为 `total_size`（小端）。验证 `total_size` 在 `(0, capacity]` 范围后进入 `RX_WAIT` 并 `ACK`。
 - `FRAME_TYPE_DATA` / `FRAME_TYPE_END`：严格顺序到达（期望 `seq = last_seq + 1` 且 `data_type` 匹配）。
   - 若 seq/type/长度不匹配：发 `NACK` 并调用 `hid_comm_on_rx_retry_fail()`；在超过 `HID_RX_RETRY_LIMIT`（5）后放弃任务。
@@ -75,13 +75,13 @@
 - 其它未定义类型：发送 `NACK`。
 
 8) 完成态
-- 当 `hRxHid.state == RX_COMPLETE`，数据已完整重组并保存在 `hRxHid.p_buf`，上层应读取并处理该缓冲区中的数据。
+  当 `hReceiveHid.state == RX_COMPLETE`，数据已完整重组并保存在 `hReceiveHid.p_buf`，上层应读取并处理该缓冲区中的数据。
 
 ## 发送（TX）逻辑说明（推断与缺失项）
-- 文件中已有 `hTxHid` 结构与若干辅助函数（如 `hid_comm_abort_tx()`），但完整的发送状态机实现（例如如何生成 START/DATA/END、何处调用 `hid_comm_send()`、超时计时器逻辑）未在 `hid_comm.c` 片段中展示。
+- 文件中已有 `hSendHid` 结构与若干辅助函数（如 `hid_comm_abort_send()`），但完整的发送状态机实现（例如如何生成 START/DATA/END、何处调用 `hid_comm_start_send()`、超时计时器逻辑）未在 `hid_comm.c` 片段中展示。
 - 由 `hid_comm_process()` 可见：发送方依赖收到的控制帧（ACK/NACK/BUSY/OF）来推进或重试，因此需要额外实现：
-  - 一个发送调度器：把 `p_buf` 分片为 24B 帧，填充 `HidFrame_t` 并调用 `hid_comm_send()`。
-  - 超时与重试机制：当等待 ACK 超时（建议 50ms）时递增 `retry_cnt` 并重发；重试耗尽后置 `TX_ERROR`。
+  - 一个发送调度器：把 `p_buf` 分片为 24B 帧，填充 `HidFrame_t` 并调用 `hid_comm_start_send()` 或构造帧并调用库的发送接口。
+  - 超时与重试机制：当等待 ACK 超时（建议 50ms）时递增 `retry_cnt` 并重发；当 `retry_cnt` 达到 `HID_RETRY_LIMIT` 时，发送端会先将状态置为 `SEND_ERROR`（使错误态可被日志或监控观察到），随后在下一次 `hid_comm_process_send()` 调用中由 `SEND_ERROR` 分支调用 `hid_comm_abort_send()` 执行清理并恢复到 `SEND_IDLE`，从而完成任务中止。
 
 ## 使用示例（调用要点）
 - 在主循环或定时器中频繁调用：
@@ -97,7 +97,7 @@ for (;;) {
 - 发送数据（伪代码示例，需实现发送调度器）：
 
 ```c
-// 1. 准备 hTxHid.p_buf / total_len / data_type 等
+// 1. 准备 hSendHid.p_buf / total_len / data_type 等
 // 2. 触发发送任务（发送 START，然后分 DATA，最后 END）
 // 3. hid_comm_process() 会处理 ACK/NACK，以推进或重试
 ```
@@ -105,7 +105,7 @@ for (;;) {
 ## 常见问题与建议
 - 定时器：协议在文档中建议 ACK 超时 ~50ms、START 后超时 ~500ms，但代码中未见计时器，需在平台上实现以避免挂死在 `RX_WAIT` 或等待 ACK。
 - CRC 依赖硬件：若移植到无硬件 CRC 平台，需要改用软件 CRC32 实现。
-- 并发与线程安全：`hid_comm_process()` 假定单线程调用；若在中断/任务并发环境下使用，需对 `hTxHid`/`hRxHid` 做适当的同步保护。
+  并发与线程安全：`hid_comm_process()` 假定单线程调用；若在中断/任务并发环境下使用，需对 `hSendHid`/`hReceiveHid` 做适当的同步保护。
 - 重组容量：`rx_task_buffer` 为 6KB，若上层需要更大数据，需在应用层实现分段或流控策略并考虑序列号回绕。
 
 ## 下一步建议

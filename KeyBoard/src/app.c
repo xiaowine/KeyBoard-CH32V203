@@ -24,6 +24,8 @@ static volatile uint8_t scan_timeout_ticks = 0;
 
 volatile uint8_t hid_comm = 0;
 
+void hid_comm_callback(HidComm_Event_t evt, const HidComm_EventParam_t *param);
+
 void app_init(void)
 {
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
@@ -106,10 +108,8 @@ void app_init(void)
     Set_USB_Clock();
     USB_Init();
     USB_Interrupts_Config();
-
-    // 注册 HID 通信回调函数
-    // hid_comm_set_callback(my_hid_comm_callback);
-
+    /* 注册 HID 通信回调 */
+    hid_comm_register_callback(hid_comm_callback);
     PRINT("App Init OK!\r\n");
 }
 
@@ -214,5 +214,56 @@ RAM INTF void TIM4_IRQHandler(void)
     {
         hid_comm = 1;
         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+    }
+}
+
+void hid_comm_callback(HidComm_Event_t evt, const HidComm_EventParam_t *param)
+{
+    switch (evt)
+    {
+    case HID_COMM_EVT_RX_COMPLETE:
+        switch (param->data_type)
+        {
+        case DATA_TYPE_GET_KEY:
+            hid_comm_start_send(last_snapshot, HC165_COUNT, DATA_TYPE_GET_KEY);
+            break;
+        case DATA_TYPE_GET_LAYER_KEYMAP:
+        {
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            /* 发送当前运行时已加载的一层（位于 keymap_active） */
+            hid_comm_start_send((const uint8_t *)keymap_active, layer_size, DATA_TYPE_LAYER_KEYMAP);
+        }
+        break;
+        case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
+        {
+            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+            extern uint8_t _keymap_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            const uint8_t *flash_base = &_keymap_lma[0];
+            uintptr_t p = (uintptr_t)flash_base + 1u; /* 跳过首字节的 image header */
+            p = (p + 3u) & ~((uintptr_t)3u);          /* 向上对齐到 4 字节边界 */
+            const uint8_t *layers_src = (const uint8_t *)p;
+            hid_comm_start_send(layers_src, (uint16_t)(layer_size * (size_t)KEYMAP_LAYERS), DATA_TYPE_LAYER_KEYMAP);
+        }
+        break;
+        default:
+            break;
+        }
+        /* code */
+        break;
+    case HID_COMM_EVT_RX_ERROR:
+        /* code */
+        break;
+    case HID_COMM_EVT_TX_COMPLETE:
+        /* code */
+        break;
+    case HID_COMM_EVT_TX_ERROR:
+        /* code */
+        break;
+    case HID_COMM_EVT_TX_ABORT:
+        /* code */
+        break;
+    default:
+        break;
     }
 }

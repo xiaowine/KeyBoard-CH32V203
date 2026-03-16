@@ -22,6 +22,8 @@ from typing import Optional
 
 import hid
 import traceback
+import struct
+from typing import Any
 
 FRAME_TYPE_SINGLE = 0b000
 FRAME_TYPE_START = 0b001
@@ -33,10 +35,18 @@ FRAME_TYPE_BUSY = 0b110
 FRAME_TYPE_OF = 0b111
 
 DATA_TYPE_KEY = 0
+DATA_TYPE_GET_KEY = 2
+DATA_TYPE_LAYER_KEYMAP = 1
+DATA_TYPE_GET_LAYER_KEYMAP = 3
+DATA_TYPE_GET_ALL_LAYER_KEYMAP = 4
 
 FRAME_SIZE = 32
 PAYLOAD_SIZE = 24
 CRC_INPUT_SIZE = 28
+
+# 控制脚本日志详细度：0=元信息（默认），1=包含 payload 前若干字节
+HID_VERBOSE = 0
+
 
 
 @dataclass
@@ -201,7 +211,8 @@ def read_frame(dev: hid.device, timeout_ms: int) -> ParsedFrame:
     frame = decode_report(data)
     if frame is None:
         raise TimeoutError(f"{timeout_ms}ms 内未收到有效帧")
-    return parse_frame(frame)
+    parsed = parse_frame(frame)
+    return parsed
 
 
 def expect_ctrl(dev: hid.device, exp_type: int, exp_seq: int, exp_data_type: int, timeout_ms: int) -> None:
@@ -211,6 +222,144 @@ def expect_ctrl(dev: hid.device, exp_type: int, exp_seq: int, exp_data_type: int
             f"响应不符合预期: type={rsp.frame_type} seq={rsp.seq} data_type={rsp.data_type}, "
             f"期望 type={exp_type} seq={exp_seq} data_type={exp_data_type}"
         )
+
+
+def request_and_receive(dev: hid.device, timeout_ms: int, crc_mode: str, get_type: int):
+    """对设备发送 GET 请求并接收由设备发起的 SINGLE 或 START/DATA/END 传输。
+
+    返回 (data_type, payload_bytes)
+    """
+    seq = 0
+    req = build_frame(FRAME_TYPE_SINGLE, get_type, seq, b"", crc_mode=crc_mode)
+    flush_input(dev)
+    write_frame(dev, req)
+    expect_ctrl(dev, FRAME_TYPE_ACK, seq, get_type, timeout_ms)
+
+    start_time = time.time()
+    overall_timeout = max(timeout_ms / 1000.0, 0.5) * 20
+
+    recv_buf = None
+    total_expected = 0
+    recved = 0
+    expect_seq = None
+
+    while time.time() - start_time < overall_timeout:
+        try:
+            frame = read_frame(dev, timeout_ms)
+        except TimeoutError:
+            continue
+
+        # 忽略控制帧
+        if frame.frame_type in (FRAME_TYPE_ACK, FRAME_TYPE_NACK, FRAME_TYPE_BUSY, FRAME_TYPE_OF):
+            continue
+
+        # SINGLE (strictly by frame type)
+        if frame.frame_type == FRAME_TYPE_SINGLE:
+            if frame.seq != 0:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError("SINGLE frame seq must be 0")
+            write_frame(dev, build_frame(FRAME_TYPE_ACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+            payload = frame.payload[: frame.length]
+            return frame.data_type, bytes(payload)
+
+        # START (strictly by frame type)
+        if frame.frame_type == FRAME_TYPE_START:
+            if frame.seq != 0:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError("START frame seq must be 0")
+
+            if frame.length < 4:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError("START payload too short for total size")
+
+            total_expected = int.from_bytes(frame.payload[:4], "little")
+            if total_expected == 0:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError("START total size == 0")
+
+            recv_buf = bytearray(total_expected)
+            recved = 0
+            first_chunk = frame.payload[4 : 4 + (frame.length - 4)]
+            if first_chunk:
+                to_copy = min(len(first_chunk), total_expected - recved)
+                recv_buf[recved:recved + to_copy] = first_chunk[:to_copy]
+                recved += to_copy
+
+            expect_seq = (frame.seq + 1) & 0xFF
+            write_frame(dev, build_frame(FRAME_TYPE_ACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+
+            while recved < total_expected:
+                try:
+                    f2 = read_frame(dev, timeout_ms * 4)
+                except TimeoutError:
+                    write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, expect_seq, b"", crc_mode=crc_mode))
+                    raise TimeoutError("等待 DATA/END 超时")
+
+                if f2.frame_type in (FRAME_TYPE_ACK, FRAME_TYPE_NACK, FRAME_TYPE_BUSY, FRAME_TYPE_OF):
+                    continue
+
+                if f2.data_type != frame.data_type or f2.seq != expect_seq:
+                    write_frame(dev, build_frame(FRAME_TYPE_NACK, f2.data_type, f2.seq, b"", crc_mode=crc_mode))
+                    raise AssertionError(f"Unexpected seq/type: got seq={f2.seq} expected={expect_seq}")
+
+                to_copy = min(f2.length, total_expected - recved)
+                if to_copy > 0:
+                    recv_buf[recved:recved + to_copy] = f2.payload[:to_copy]
+                    recved += to_copy
+
+                write_frame(dev, build_frame(FRAME_TYPE_ACK, f2.data_type, f2.seq, b"", crc_mode=crc_mode))
+
+                if f2.frame_type == FRAME_TYPE_END:
+                    if recved != total_expected:
+                        raise AssertionError("END received but length mismatch")
+                    return frame.data_type, bytes(recv_buf)
+
+                expect_seq = (expect_seq + 1) & 0xFF
+
+    raise TimeoutError("未在规定时间内收到设备发起的数据")
+
+
+def parse_keymap_payload(payload: bytes) -> None:
+    """解析并打印 KeyMapping 数组：packed struct: uint8 modifiers; uint16 codes[3]; uint8 type"""
+    KEY_TOTAL_KEYS = 24
+    ENTRY_SIZE = 8
+    if len(payload) % ENTRY_SIZE != 0:
+        print(f"警告: keymap 长度 {len(payload)} 不是 {ENTRY_SIZE} 的整数倍")
+    entries = len(payload) // ENTRY_SIZE
+    fmt = "<BHHHB"  # modifiers, code0, code1, code2, type
+    for i in range(entries):
+        off = i * ENTRY_SIZE
+        try:
+            modifiers, c0, c1, c2, typ = struct.unpack_from(fmt, payload, off)
+        except struct.error:
+            print(f"无法解析条目 {i}")
+            continue
+        codes = [c0, c1, c2]
+        # 若 payload 长度是多层拼接，则附带层与索引信息
+        layer = i // KEY_TOTAL_KEYS
+        idx = i % KEY_TOTAL_KEYS
+        if entries > KEY_TOTAL_KEYS:
+            print(f"Layer {layer} Entry {idx:02d}: type={typ} mods=0x{modifiers:02X} codes={[hex(x) for x in codes]}")
+        else:
+            print(f"Entry {idx:02d}: type={typ} mods=0x{modifiers:02X} codes={[hex(x) for x in codes]}")
+
+
+def test_get_layer_keymap(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
+    """请求单层 keymap 并解析打印"""
+    data_type, payload = request_and_receive(dev, timeout_ms, crc_mode, DATA_TYPE_GET_LAYER_KEYMAP)
+    if data_type != DATA_TYPE_LAYER_KEYMAP:
+        raise AssertionError(f"期望 data_type={DATA_TYPE_LAYER_KEYMAP}，但收到 {data_type}")
+    print(f"Received layer keymap, len={len(payload)}")
+    parse_keymap_payload(payload)
+
+
+def test_get_all_layer_keymap(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
+    """请求所有层 keymap 并解析打印"""
+    data_type, payload = request_and_receive(dev, timeout_ms, crc_mode, DATA_TYPE_GET_ALL_LAYER_KEYMAP)
+    if data_type != DATA_TYPE_LAYER_KEYMAP:
+        raise AssertionError(f"期望 data_type={DATA_TYPE_LAYER_KEYMAP}，但收到 {data_type}")
+    print(f"Received all-layers keymap, len={len(payload)}")
+    parse_keymap_payload(payload)
 
 
 def test_single_ok(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
@@ -274,6 +423,142 @@ def test_start_invalid_seq(dev: hid.device, timeout_ms: int, crc_mode: str) -> N
     expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_KEY, timeout_ms)
 
 
+def test_device_send_receive(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
+    """等待设备主动发送数据并完成重组，接收到每个数据帧后会自动回 ACK。
+
+    本测试用于验证设备到主机（Device->Host）方向的发送逻辑。
+    """
+    # 发送 GET 请求以触发 MCU 向主机发送（Device->Host）数据
+    seq = 0
+    req = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_GET_KEY, seq, b"", crc_mode=crc_mode)
+    flush_input(dev)
+    write_frame(dev, req)
+    # 期望设备 ACK 我们的请求
+    expect_ctrl(dev, FRAME_TYPE_ACK, seq, DATA_TYPE_GET_KEY, timeout_ms)
+
+    # 等待并处理一次由设备发起的传输（支持 SINGLE 或 START+DATA+END）
+    start_time = time.time()
+    overall_timeout = max(timeout_ms / 1000.0, 0.5) * 20
+
+    recv_buf = None
+    total_expected = 0
+    recved = 0
+    expect_seq = None
+
+    while time.time() - start_time < overall_timeout:
+        try:
+            frame = read_frame(dev, timeout_ms)
+        except TimeoutError:
+            # 继续等待设备发起
+            continue
+
+        # 打印诊断信息（原始 ctrl + 解析结果）
+        ctrl_raw = frame.raw[0]
+        typeA = (ctrl_raw >> 5) & 0x07
+        lenA = ctrl_raw & 0x1F
+        typeB = ctrl_raw & 0x07
+        lenB = (ctrl_raw >> 3) & 0x1F
+        print(
+            f"[Recv] raw_ctrl=0x{ctrl_raw:02X} | A:type={typeA} len={lenA} | B:type={typeB} len={lenB} | parsed:type={frame.frame_type} seq={frame.seq} len={frame.length} data_type={frame.data_type}"
+        )
+
+        # 忽略控制帧（ACK/NACK/BUSY/OF）
+        if frame.frame_type in (FRAME_TYPE_ACK, FRAME_TYPE_NACK, FRAME_TYPE_BUSY, FRAME_TYPE_OF):
+            print(f"[Control] received ctrl frame type={frame.frame_type} seq={frame.seq}")
+            continue
+
+        # 优先按 SINGLE 处理（严格按 frame_type）
+        is_single_like = frame.frame_type == FRAME_TYPE_SINGLE
+        if is_single_like:
+            if frame.seq != 0:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError(f"SINGLE frame seq must be 0, got={frame.seq}")
+            write_frame(dev, build_frame(FRAME_TYPE_ACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+            payload = frame.payload[: frame.length]
+            # 当设备返回键位快照（HC165_COUNT 字节）时，以二进制位图打印便于观察按键状态
+            if frame.data_type == DATA_TYPE_KEY and len(payload) >= 1:
+                raw = int.from_bytes(payload, "little")
+                if raw == 0:
+                    keys = 0
+                else:
+                    keys = (~raw) & 0x00FFFFFF
+                print(f"[Complete] SINGLE payload ({len(payload)}): raw=0x{raw:06X} keys=0b{keys:024b}")
+            else:
+                print(f"[Complete] SINGLE payload ({len(payload)}): {payload!r}")
+            return
+
+        # 处理 START（严格按 frame_type）
+        is_start_like = frame.frame_type == FRAME_TYPE_START
+        if is_start_like:
+            if frame.seq != 0:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError(f"START frame seq must be 0, got={frame.seq}")
+
+            if frame.length < 4:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError("START payload too short for total size")
+
+            total_expected = int.from_bytes(frame.payload[:4], "little")
+            if total_expected == 0:
+                write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+                raise AssertionError("START total size == 0")
+
+            recv_buf = bytearray(total_expected)
+            recved = 0
+            # 若 START 带首段数据，复制进 buffer
+            first_chunk = frame.payload[4 : 4 + (frame.length - 4)]
+            if first_chunk:
+                to_copy = min(len(first_chunk), total_expected - recved)
+                recv_buf[recved:recved + to_copy] = first_chunk[:to_copy]
+                recved += to_copy
+
+            expect_seq = (frame.seq + 1) & 0xFF
+            write_frame(dev, build_frame(FRAME_TYPE_ACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
+
+            # 接收后续 DATA / END
+            while recved < total_expected:
+                try:
+                    f2 = read_frame(dev, timeout_ms * 4)
+                except TimeoutError:
+                    write_frame(dev, build_frame(FRAME_TYPE_NACK, frame.data_type, expect_seq, b"", crc_mode=crc_mode))
+                    raise TimeoutError("等待 DATA/END 超时")
+
+                if f2.frame_type in (FRAME_TYPE_ACK, FRAME_TYPE_NACK, FRAME_TYPE_BUSY, FRAME_TYPE_OF):
+                    print(f"[Control] follow frame type={f2.frame_type} seq={f2.seq}")
+                    continue
+
+                print(f"[Recv] follow type={f2.frame_type} seq={f2.seq} len={f2.length}")
+                if f2.data_type != frame.data_type or f2.seq != expect_seq:
+                    write_frame(dev, build_frame(FRAME_TYPE_NACK, f2.data_type, f2.seq, b"", crc_mode=crc_mode))
+                    raise AssertionError(f"Unexpected seq/type: got seq={f2.seq} expected={expect_seq}")
+
+                to_copy = min(f2.length, total_expected - recved)
+                if to_copy > 0:
+                    recv_buf[recved:recved + to_copy] = f2.payload[:to_copy]
+                    recved += to_copy
+
+                write_frame(dev, build_frame(FRAME_TYPE_ACK, f2.data_type, f2.seq, b"", crc_mode=crc_mode))
+
+                if f2.frame_type == FRAME_TYPE_END:
+                    if recved != total_expected:
+                        raise AssertionError(f"END received but length mismatch recved={recved} expected={total_expected}")
+                    # 若是键位快照类型，打印二进制；否则直接打印原始 bytes
+                    if frame.data_type == DATA_TYPE_KEY and recv_buf is not None:
+                        raw = int.from_bytes(bytes(recv_buf[:recved]), "little")
+                        if raw == 0:
+                            keys = 0
+                        else:
+                            keys = (~raw) & 0x00FFFFFF
+                        print(f"[Complete] START/DATA/END payload ({recved}): raw=0x{raw:06X} keys=0b{keys:024b}")
+                    else:
+                        print(f"[Complete] START/DATA/END payload ({recved}): {bytes(recv_buf)!r}")
+                    return
+
+                expect_seq = (expect_seq + 1) & 0xFF
+
+    raise TimeoutError("未在规定时间内收到设备发起的数据")
+
+
 def auto_detect_crc_mode(dev: hid.device, timeout_ms: int) -> str:
     """自动探测能让设备返回 ACK 的 CRC 配置。"""
     probe_payload = b"crc-probe"
@@ -304,6 +589,9 @@ def run_all(dev: hid.device, timeout_ms: int, crc_mode: str) -> int:
         "segment_retry_recovery": test_segment_retry_recovery,
         "single_invalid_seq": test_single_invalid_seq,
         "start_invalid_seq": test_start_invalid_seq,
+        "device_send_receive": test_device_send_receive,
+        "get_layer_keymap": test_get_layer_keymap,
+        "get_all_layer_keymap": test_get_all_layer_keymap,
     }
 
     # 默认运行全部
@@ -314,12 +602,12 @@ def run_all(dev: hid.device, timeout_ms: int, crc_mode: str) -> int:
         flush_input(dev)
         time.sleep(0.02)
         try:
-            fn(dev, timeout_ms, crc_mode)
-            print(f"[通过] {name}")
-            passed += 1
+                    fn(dev, timeout_ms, crc_mode)
+                    print(f"[通过] {name}")
+                    passed += 1
         except Exception as exc:
-            print(f"[失败] {name}: {exc}")
-    print(f"\n结果: {passed}/{len(tests)} 项通过")
+                    print(f"[失败] {name}: {exc}")
+                    print(f"\n结果: {passed}/{len(tests)} 项通过")
     return 0 if passed == len(tests) else 1
 
 
@@ -351,13 +639,22 @@ def parse_args() -> argparse.Namespace:
         "--tests",
         type=str,
         default="all",
-        help="要运行的测试，逗号分隔，或 'all'（默认: all）。可用: single_ok, crc_error_nack, segment_retry_recovery",
+        help="要运行的测试，逗号分隔，或 'all'（默认: all）。可用: single_ok, crc_error_nack, segment_retry_recovery, device_send_receive, get_layer_keymap, get_all_layer_keymap",
+    )
+    parser.add_argument(
+        "--hid-verbose",
+        type=int,
+        choices=[0, 1],
+        default=2,
+        help="脚本 HID 日志详细度：0=元信息（默认），1=包含 payload 转储",
     )
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
+    global HID_VERBOSE
+    HID_VERBOSE = int(args.hid_verbose)
     dev = hid.device()
     try:
         # 列举匹配的 HID 设备，帮助诊断 PID/路径 是否正确
@@ -424,6 +721,9 @@ def main() -> int:
             "segment_retry_recovery": test_segment_retry_recovery,
             "single_invalid_seq": test_single_invalid_seq,
             "start_invalid_seq": test_start_invalid_seq,
+            "device_send_receive": test_device_send_receive,
+            "get_layer_keymap": test_get_layer_keymap,
+            "get_all_layer_keymap": test_get_all_layer_keymap,
         }
 
         if tests_arg.lower() == "all":

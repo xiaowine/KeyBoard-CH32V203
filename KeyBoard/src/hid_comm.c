@@ -1,10 +1,3 @@
-/********************* HID Communication Implementation *******************
- * File Name          : hid_comm.c
- * Author             : Your Name
- * Version            : V1.0.0
- * Date               : 2026/03/02
- * Description        : HID communication implementation
- *************************************************************************/
 #include "hid_comm.h"
 #include <string.h>
 #include "usb_endp.h"
@@ -13,6 +6,8 @@
 
 SendHandle_t hSendHid = {0};       // 全局发送句柄
 ReceiveHandle_t hReceiveHid = {0}; // 全局接收句柄
+// 回调函数指针（由应用层注册）
+static hid_comm_callback_t g_hid_comm_callback = NULL;
 
 /* 接收重组缓冲区：由库在收到 START/SINGLE 时按需分配（malloc），在完成或复位时由库释放，以节省 RAM */
 
@@ -23,12 +18,12 @@ static uint8_t hid_comm_check_crc(const HidFrame_t *frame)
     volatile uint32_t crc_words[7];
     memcpy((void *)crc_words, frame, 28U);
     CRC_ResetDR();
-    uint32_t calc = CRC_CalcBlockCRC((uint32_t *)crc_words, 7U);
+    const uint32_t calc = CRC_CalcBlockCRC((uint32_t *)crc_words, 7U);
     return (calc == frame->crc32) ? 1U : 0U;
 }
 
 /* 发送控制帧（ACK/NACK/BUSY/OF）：len 固定为 0，payload 全 0，自动补算 CRC32 */
-static uint8_t USBD_SendCustomData_ctrl_frame(uint8_t frame_type, uint8_t data_type, uint8_t seq)
+static uint8_t USBD_SendCustomData_ctrl_frame(const uint8_t frame_type, const uint8_t data_type, const uint8_t seq)
 {
     HidFrame_t tx_frame;
     uint32_t crc_words[7] = {0};
@@ -98,8 +93,21 @@ static void hid_comm_on_receive_retry_fail(const HidFrame_t *frame)
     {
         PRINT("HID receive retry exhausted, drop task type=%d seq=%d\r\n", frame->data_type, frame->seq);
         hReceiveHid.state = RECEIVE_ERROR;
+        if (g_hid_comm_callback)
+        {
+            HidComm_EventParam_t param = {0};
+            param.data_type = frame->data_type;
+            param.seq = frame->seq;
+            g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+        }
         hid_comm_reset_receive();
     }
+}
+
+// 注册回调实现
+void hid_comm_register_callback(hid_comm_callback_t cb)
+{
+    g_hid_comm_callback = cb;
 }
 
 /* 非阻塞启动一次发送任务：0 成功，1 表示当前发送器忙或参数错误 */
@@ -146,9 +154,9 @@ uint8_t hid_comm_start_send(const uint8_t *data, uint16_t len, uint8_t data_type
     {
         HidFrame_t tx = {0};
         tx.ctrl.type = FRAME_TYPE_START;
-        uint32_t total_size = (uint32_t)len;
-        const uint8_t first_data_bytes = (uint8_t)(sizeof(tx.payload) - 4U); /* 20 bytes */
-        uint8_t first_payload_len = (uint8_t)((len > first_data_bytes) ? first_data_bytes : len);
+        const uint32_t total_size = len;
+        const uint8_t first_data_bytes = sizeof(tx.payload) - 4U; /* 20 bytes */
+        const uint8_t first_payload_len = (uint8_t)(len > first_data_bytes ? first_data_bytes : len);
 
         tx.ctrl.len = (uint8_t)(4U + first_payload_len);
         tx.data_type = data_type;
@@ -174,10 +182,12 @@ uint8_t hid_comm_start_send(const uint8_t *data, uint16_t len, uint8_t data_type
 /* 发送状态机：由 hid_comm_process 周期性调用（非阻塞），负责分片与重传 */
 static void hid_comm_process_send(void)
 {
-    if (hSendHid.state == SEND_IDLE)
+    switch (hSendHid.state)
+    {
+    case SEND_IDLE:
         return;
 
-    if (hSendHid.state == SEND_WAIT_ACK)
+    case SEND_WAIT_ACK:
     {
         if (hSendHid.status.ack_flag)
         {
@@ -187,19 +197,33 @@ static void hid_comm_process_send(void)
 
             if (hSendHid.total_len <= sizeof(((HidFrame_t *)0)->payload))
             {
+                if (g_hid_comm_callback)
+                {
+                    HidComm_EventParam_t param = {0};
+                    param.data_type = hSendHid.data_type;
+                    param.len = hSendHid.total_len;
+                    g_hid_comm_callback(HID_COMM_EVT_TX_COMPLETE, &param);
+                }
                 hid_comm_abort_send();
                 return;
             }
 
             if ((uint32_t)hSendHid.sent_len >= (uint32_t)hSendHid.total_len)
             {
+                if (g_hid_comm_callback)
+                {
+                    HidComm_EventParam_t param = {0};
+                    param.data_type = hSendHid.data_type;
+                    param.len = hSendHid.total_len;
+                    g_hid_comm_callback(HID_COMM_EVT_TX_COMPLETE, &param);
+                }
                 hid_comm_abort_send();
                 return;
             }
 
-            uint16_t remain = (uint16_t)(hSendHid.total_len - hSendHid.sent_len);
+            const uint16_t remain = (uint16_t)(hSendHid.total_len - hSendHid.sent_len);
             HidFrame_t tx = {0};
-            uint8_t to_copy = (uint8_t)(remain > sizeof(tx.payload) ? sizeof(tx.payload) : remain);
+            const uint8_t to_copy = (uint8_t)(remain > sizeof(tx.payload) ? sizeof(tx.payload) : remain);
             if ((uint32_t)hSendHid.sent_len + (uint32_t)to_copy == (uint32_t)hSendHid.total_len)
             {
                 tx.ctrl.type = FRAME_TYPE_END;
@@ -230,24 +254,27 @@ static void hid_comm_process_send(void)
             hSendHid.timeout_ticks = 0U;
             if (hSendHid.status.retry_cnt >= HID_RETRY_LIMIT)
             {
-                PRINT("HID TX retry exhausted, drop task\r\n");
-                hid_comm_abort_send();
+                PRINT("HID TX retry exhausted, enter SEND_ERROR\r\n");
+                hSendHid.state = SEND_ERROR;
                 return;
             }
             hSendHid.status.retry_cnt++;
             hSendHid.state = SEND_RETRY;
         }
+        break;
     }
 
-    if (hSendHid.state == SEND_RETRY)
+    case SEND_RETRY:
     {
         HidFrame_t tx = {0};
         if (hSendHid.curr_seq == 0U && hSendHid.total_len > sizeof(tx.payload))
         {
             tx.ctrl.type = FRAME_TYPE_START;
-            uint32_t total_size = (uint32_t)hSendHid.total_len;
-            const uint8_t first_data_bytes = (uint8_t)(sizeof(tx.payload) - 4U);
-            uint8_t first_payload_len = (uint8_t)((hSendHid.total_len > first_data_bytes) ? first_data_bytes : hSendHid.total_len);
+            const uint32_t total_size = hSendHid.total_len;
+            const uint8_t first_data_bytes = sizeof(tx.payload) - 4U;
+            const uint8_t first_payload_len = (uint8_t)(hSendHid.total_len > first_data_bytes
+                                                            ? first_data_bytes
+                                                            : hSendHid.total_len);
             tx.ctrl.len = (uint8_t)(4U + first_payload_len);
             tx.data_type = hSendHid.data_type;
             tx.seq = 0U;
@@ -262,7 +289,7 @@ static void hid_comm_process_send(void)
         }
 
         {
-            uint8_t seq = hSendHid.curr_seq;
+            const uint8_t seq = hSendHid.curr_seq;
             uint16_t offset = 0U;
             if (seq == 0U)
             {
@@ -284,7 +311,7 @@ static void hid_comm_process_send(void)
                 remain = 0U;
             }
 
-            uint8_t to_copy = (uint8_t)(remain > sizeof(tx.payload) ? sizeof(tx.payload) : remain);
+            const uint8_t to_copy = (uint8_t)(remain > sizeof(tx.payload) ? sizeof(tx.payload) : remain);
             if (to_copy == 0U)
             {
                 hid_comm_abort_send();
@@ -293,19 +320,49 @@ static void hid_comm_process_send(void)
             tx.ctrl.len = to_copy;
             tx.data_type = hSendHid.data_type;
             tx.seq = seq;
+            // 计算完 to_copy, offset, seq 之后，替换原来直接设置 END/DATA 的代码为：
             if ((uint32_t)offset + (uint32_t)to_copy == (uint32_t)hSendHid.total_len)
             {
-                tx.ctrl.type = FRAME_TYPE_END;
+                if (seq == 0U && (uint32_t)hSendHid.total_len <= (uint32_t)sizeof(tx.payload))
+                {
+                    // 重传的情况：这是单包（SINGLE）重传，按 SINGLE 构造 ctrl
+                    ((uint8_t *)&tx)[0] = (uint8_t)((FRAME_TYPE_SINGLE & 0x07) << 5 | ((uint8_t)to_copy & 0x1F));
+                }
+                else
+                {
+                    // 多包的最后一包 -> END
+                    ((uint8_t *)&tx)[0] = (uint8_t)((FRAME_TYPE_END & 0x07) << 5 | ((uint8_t)to_copy & 0x1F));
+                }
             }
             else
             {
-                tx.ctrl.type = FRAME_TYPE_DATA;
+                ((uint8_t *)&tx)[0] = (uint8_t)((FRAME_TYPE_DATA & 0x07) << 5 | ((uint8_t)to_copy & 0x1F));
             }
             memcpy(tx.payload, &hSendHid.p_buf[offset], to_copy);
             USBD_SendCustomData_frame(&tx);
             hSendHid.state = SEND_WAIT_ACK;
             return;
         }
+        break;
+    }
+
+    case SEND_ERROR:
+    {
+        PRINT("HID TX in SEND_ERROR: aborting send and resetting to IDLE\r\n");
+        if (g_hid_comm_callback)
+        {
+            HidComm_EventParam_t param = {0};
+            param.data_type = hSendHid.data_type;
+            param.len = hSendHid.total_len;
+            param.reason = HID_COMM_REASON_TX_RETRY_EXHAUSTED; // retry exhausted
+            g_hid_comm_callback(HID_COMM_EVT_TX_ERROR, &param);
+        }
+        hid_comm_abort_send();
+        return;
+    }
+
+    default:
+        break;
     }
 }
 
@@ -334,6 +391,14 @@ static void hid_comm_process_recv(void)
     {
         PRINT("HID RX error: invalid payload len=%d\r\n", frame_len);
         USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+        if (g_hid_comm_callback)
+        {
+            HidComm_EventParam_t param = {0};
+            param.data_type = frame->data_type;
+            param.seq = frame->seq;
+            param.reason = HID_COMM_REASON_INVALID_LEN;
+            g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+        }
         return;
     }
 
@@ -341,6 +406,14 @@ static void hid_comm_process_recv(void)
     {
         PRINT("HID RX error: CRC mismatch type=%d seq=%d\r\n", frame_type, frame->seq);
         USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+        if (g_hid_comm_callback)
+        {
+            HidComm_EventParam_t param = {0};
+            param.data_type = frame->data_type;
+            param.seq = frame->seq;
+            param.reason = HID_COMM_REASON_CRC_ERROR;
+            g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+        }
         return;
     }
 
@@ -370,6 +443,14 @@ static void hid_comm_process_recv(void)
         if (hSendHid.state != SEND_IDLE && frame->seq == hSendHid.curr_seq)
         {
             PRINT("HID TX aborted by remote ctrl type=%d seq=%d\r\n", frame_type, frame->seq);
+            if (g_hid_comm_callback)
+            {
+                HidComm_EventParam_t param = {0};
+                param.data_type = hSendHid.data_type;
+                param.seq = frame->seq;
+                param.reason = frame_type;
+                g_hid_comm_callback(HID_COMM_EVT_TX_ABORT, &param);
+            }
             hid_comm_abort_send();
         }
         return;
@@ -395,17 +476,19 @@ static void hid_comm_process_recv(void)
         {
             if (frame_len > 0U)
             {
-                if (frame_len > HID_RECEIVE_MAX_CAPACITY)
-                {
-                    hReceiveHid.state = RECEIVE_ERROR;
-                    USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
-                    return;
-                }
-                uint8_t *p = (uint8_t *)malloc((size_t)frame_len);
+                uint8_t *p = malloc(frame_len);
                 if (p == NULL)
                 {
                     hReceiveHid.state = RECEIVE_ERROR;
                     USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+                    if (g_hid_comm_callback)
+                    {
+                        HidComm_EventParam_t param = {0};
+                        param.data_type = frame->data_type;
+                        param.seq = frame->seq;
+                        param.reason = HID_COMM_REASON_MALLOC_FAIL;
+                        g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+                    }
                     return;
                 }
                 hReceiveHid.p_buf = p;
@@ -439,6 +522,14 @@ static void hid_comm_process_recv(void)
         {
             hReceiveHid.state = RECEIVE_ERROR;
             USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            if (g_hid_comm_callback)
+            {
+                HidComm_EventParam_t param = {0};
+                param.data_type = frame->data_type;
+                param.seq = frame->seq;
+                param.reason = HID_COMM_REASON_START_HEADER_SHORT;
+                g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+            }
             return;
         }
 
@@ -447,6 +538,14 @@ static void hid_comm_process_recv(void)
         {
             hReceiveHid.state = RECEIVE_ERROR;
             USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            if (g_hid_comm_callback)
+            {
+                HidComm_EventParam_t param = {0};
+                param.data_type = frame->data_type;
+                param.seq = frame->seq;
+                param.reason = HID_COMM_REASON_INVALID_TOTAL_SIZE;
+                g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+            }
             return;
         }
 
@@ -465,11 +564,19 @@ static void hid_comm_process_recv(void)
 
         if (hReceiveHid.p_buf == NULL)
         {
-            uint8_t *p = (uint8_t *)malloc((size_t)total_size);
+            uint8_t *p = malloc((size_t)total_size);
             if (p == NULL)
             {
                 hReceiveHid.state = RECEIVE_ERROR;
                 USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+                if (g_hid_comm_callback)
+                {
+                    HidComm_EventParam_t param = {0};
+                    param.data_type = frame->data_type;
+                    param.seq = frame->seq;
+                    param.reason = HID_COMM_REASON_MALLOC_FAIL;
+                    g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+                }
                 return;
             }
             hReceiveHid.p_buf = p;
@@ -479,6 +586,14 @@ static void hid_comm_process_recv(void)
         {
             hReceiveHid.state = RECEIVE_ERROR;
             USBD_SendCustomData_ctrl_frame(FRAME_TYPE_NACK, frame->data_type, frame->seq);
+            if (g_hid_comm_callback)
+            {
+                HidComm_EventParam_t param = {0};
+                param.data_type = frame->data_type;
+                param.seq = frame->seq;
+                param.reason = HID_COMM_REASON_INSUFFICIENT_CAPACITY;
+                g_hid_comm_callback(HID_COMM_EVT_RX_ERROR, &param);
+            }
             return;
         }
 
@@ -553,6 +668,15 @@ static void hid_comm_process_recv(void)
     {
         PRINT("HID RX complete: type=%d len=%d seq=%d\r\n", hReceiveHid.data_type, hReceiveHid.total_len,
               hReceiveHid.last_seq);
+        if (g_hid_comm_callback)
+        {
+            HidComm_EventParam_t param = {0};
+            param.data_type = hReceiveHid.data_type;
+            param.p = hReceiveHid.p_buf;
+            param.len = hReceiveHid.total_len;
+            param.seq = hReceiveHid.last_seq;
+            g_hid_comm_callback(HID_COMM_EVT_RX_COMPLETE, &param);
+        }
     }
 }
 

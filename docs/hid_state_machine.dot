@@ -18,9 +18,10 @@ digraph HID_StateMachines {
         tx_SEND_WAIT_ACK -> tx_SEND_WAIT_ACK [label="RxACK\n(收到 ACK，发送下一个分片)"];
         tx_SEND_WAIT_ACK -> tx_SEND_IDLE [label="RxACK (complete)\n(任务完成，清理/退出)"];
         tx_SEND_WAIT_ACK -> tx_SEND_RETRY [label="Timeout / RxNACK\n(超时或收到 NACK)"];
+        tx_SEND_WAIT_ACK -> tx_SEND_ERROR [label="RetryExhaust\n(重试耗尽)"];
         tx_SEND_RETRY -> tx_SEND_WAIT_ACK [label="RetrySend\n(重发 curr_seq 帧)"];
         tx_SEND_WAIT_ACK -> tx_SEND_IDLE [label="RemoteAbort\n(远端 BUSY/OF，中止任务)"];
-        tx_SEND_RETRY -> tx_SEND_IDLE [label="RetryExhaust\n(重试耗尽，放弃)"];
+        tx_SEND_ERROR -> tx_SEND_IDLE [label="Abort (next tick)\n(调用 hid_comm_abort_send)"];
     }
 
     subgraph cluster_rx {
