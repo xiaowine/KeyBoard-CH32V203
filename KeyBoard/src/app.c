@@ -28,6 +28,7 @@ void app_init(void)
 {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
+    RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
 
     /* 按 FLASH 中的掩码（KEYMAP_LOAD_MASK）选择性加载 keymap 层到 RAM */
     keymap_loader_init();

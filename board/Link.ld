@@ -168,22 +168,15 @@ SECTIONS
 	} >RAM AT>FLASH
 
 
-
-		/* Keymap: place in RAM at runtime, load image from KEYMAP_FLASH */
-		.keymap_load_addr :
-		{
-			. = ALIGN(4);
-			PROVIDE(_keymap_lma = .);
-		} >KEYMAP_FLASH
-
 		.keymap :
 		{
 			. = ALIGN(4);
+			PROVIDE(_keymap_lma = .);
 			PROVIDE(_keymap_vma = .);
 			KEEP(*(.keymap))
 			. = ALIGN(4);
 			PROVIDE(_keymap_end = .);
-		} >RAM AT>KEYMAP_FLASH
+		} >KEYMAP_FLASH
 
 		PROVIDE( _end = _ebss);
 		PROVIDE( end = . );

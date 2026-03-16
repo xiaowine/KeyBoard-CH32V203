@@ -22,7 +22,7 @@ RAM int main(void)
     Delay_Init();
 
 #if (DEBUG)
-    USART_Printf_Init(921600);
+    USART_Printf_Init(2000000);
     PRINT("SystemClk:%lu\r\n", SystemCoreClock);
 #endif
     app_init();

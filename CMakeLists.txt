@@ -103,6 +103,6 @@ add_custom_command(TARGET "${TARGET_ARTIFACT}"
         COMMAND ${CMAKE_OBJCOPY} ARGS -O ihex "${TARGET_ARTIFACT}" "${HEX_FILE}"
         COMMAND ${CMAKE_OBJCOPY} ARGS -O binary "${TARGET_ARTIFACT}" "${BIN_FILE}"
         COMMAND ${CMAKE_OBJDUMP} ARGS --all-headers --demangle --disassemble -M xw "${TARGET_ARTIFACT}" > "${LST_FILE}"
-        COMMAND ${CMAKE_SIZE} ARGS --format=sysv "${TARGET_ARTIFACT}"
+        COMMAND ${CMAKE_SIZE} ARGS "${TARGET_ARTIFACT}"
 )
 

@@ -36,9 +36,9 @@ extern "C"
 #define DEF_ENDP_SIZE_MOUSE 8
 #define USBD_SIZE_REPORT_DESC_MOUSE 62
 #define USBD_SIZE_REPORT_DESC_KB 62
-#define DEF_ENDP_SIZE_CUSTOM 32
+#define DEF_ENDP_SIZE_CUSTOM 64
 #define DEF_ENDP_SIZE_NKRO 16
-/* Custom report descriptor is now 32 bytes (single 32-byte IN/OUT report) */
+/* Custom report descriptor is 32 bytes (single 64-byte IN/OUT report definition) */
 #define USBD_SIZE_REPORT_DESC_CUSTOM 32
 #define DEF_ENDP_SIZE_CONSUMER 8
 #define USBD_SIZE_REPORT_DESC_CONSUMER 25
@@ -46,8 +46,8 @@ extern "C"
 #define USBD_SIZE_REPORT_DESC_NKRO 39
 
 #define USBD_SIZE_STRING_LANGID 4
-#define USBD_SIZE_STRING_VENDOR 14
-#define USBD_SIZE_STRING_PRODUCT 18
+#define USBD_SIZE_STRING_VENDOR 20
+#define USBD_SIZE_STRING_PRODUCT 16
 #define USBD_SIZE_STRING_SERIAL 22
 
 #define STANDARD_ENDPOINT_DESC_SIZE 0x09
