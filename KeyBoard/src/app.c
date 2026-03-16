@@ -231,7 +231,7 @@ void hid_comm_callback(HidComm_Event_t evt, const HidComm_EventParam_t *param)
         {
             const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
             /* 发送当前运行时已加载的一层（位于 keymap_active） */
-            hid_comm_start_send((const uint8_t *)keymap_active, layer_size, DATA_TYPE_LAYER_KEYMAP);
+            hid_comm_start_send((const uint8_t *)keymap_active, layer_size, DATA_TYPE_GET_LAYER_KEYMAP);
         }
         break;
         case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
@@ -243,7 +243,7 @@ void hid_comm_callback(HidComm_Event_t evt, const HidComm_EventParam_t *param)
             uintptr_t p = (uintptr_t)flash_base + 1u; /* 跳过首字节的 image header */
             p = (p + 3u) & ~((uintptr_t)3u);          /* 向上对齐到 4 字节边界 */
             const uint8_t *layers_src = (const uint8_t *)p;
-            hid_comm_start_send(layers_src, (uint16_t)(layer_size * (size_t)KEYMAP_LAYERS), DATA_TYPE_LAYER_KEYMAP);
+            hid_comm_start_send(layers_src, (uint16_t)(layer_size * (size_t)KEYMAP_LAYERS), DATA_TYPE_GET_ALL_LAYER_KEYMAP);
         }
         break;
         default:
@@ -255,6 +255,15 @@ void hid_comm_callback(HidComm_Event_t evt, const HidComm_EventParam_t *param)
         /* code */
         break;
     case HID_COMM_EVT_TX_COMPLETE:
+        switch (param->data_type)
+        {
+        case DATA_TYPE_SET_LAYER_KEYMAP:
+            /* code */
+            break;
+
+        default:
+            break;
+        }
         /* code */
         break;
     case HID_COMM_EVT_TX_ERROR:

@@ -34,11 +34,10 @@ FRAME_TYPE_NACK = 0b101
 FRAME_TYPE_BUSY = 0b110
 FRAME_TYPE_OF = 0b111
 
-DATA_TYPE_KEY = 0
-DATA_TYPE_GET_KEY = 2
-DATA_TYPE_LAYER_KEYMAP = 1
-DATA_TYPE_GET_LAYER_KEYMAP = 3
-DATA_TYPE_GET_ALL_LAYER_KEYMAP = 4
+DATA_TYPE_SET_LAYER_KEYMAP = 0
+DATA_TYPE_GET_KEY = 1
+DATA_TYPE_GET_LAYER_KEYMAP = 2
+DATA_TYPE_GET_ALL_LAYER_KEYMAP = 3
 
 FRAME_SIZE = 32
 PAYLOAD_SIZE = 24
@@ -347,8 +346,8 @@ def parse_keymap_payload(payload: bytes) -> None:
 def test_get_layer_keymap(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
     """请求单层 keymap 并解析打印"""
     data_type, payload = request_and_receive(dev, timeout_ms, crc_mode, DATA_TYPE_GET_LAYER_KEYMAP)
-    if data_type != DATA_TYPE_LAYER_KEYMAP:
-        raise AssertionError(f"期望 data_type={DATA_TYPE_LAYER_KEYMAP}，但收到 {data_type}")
+    if data_type != DATA_TYPE_GET_LAYER_KEYMAP:
+        raise AssertionError(f"期望 data_type={DATA_TYPE_GET_LAYER_KEYMAP}，但收到 {data_type}")
     print(f"Received layer keymap, len={len(payload)}")
     parse_keymap_payload(payload)
 
@@ -356,8 +355,8 @@ def test_get_layer_keymap(dev: hid.device, timeout_ms: int, crc_mode: str) -> No
 def test_get_all_layer_keymap(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
     """请求所有层 keymap 并解析打印"""
     data_type, payload = request_and_receive(dev, timeout_ms, crc_mode, DATA_TYPE_GET_ALL_LAYER_KEYMAP)
-    if data_type != DATA_TYPE_LAYER_KEYMAP:
-        raise AssertionError(f"期望 data_type={DATA_TYPE_LAYER_KEYMAP}，但收到 {data_type}")
+    if data_type != DATA_TYPE_GET_LAYER_KEYMAP:
+        raise AssertionError(f"期望 data_type={DATA_TYPE_GET_LAYER_KEYMAP}，但收到 {data_type}")
     print(f"Received all-layers keymap, len={len(payload)}")
     parse_keymap_payload(payload)
 
@@ -365,17 +364,17 @@ def test_get_all_layer_keymap(dev: hid.device, timeout_ms: int, crc_mode: str) -
 def test_single_ok(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
     seq = 0
     payload = b"hello-hid-rx"
-    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, payload, crc_mode=crc_mode)
+    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_GET_KEY, seq, payload, crc_mode=crc_mode)
     write_frame(dev, frame)
-    expect_ctrl(dev, FRAME_TYPE_ACK, seq, DATA_TYPE_KEY, timeout_ms)
+    expect_ctrl(dev, FRAME_TYPE_ACK, seq, DATA_TYPE_GET_KEY, timeout_ms)
 
 
 def test_crc_error_nack(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
     seq = 0
     payload = b"crc-bad"
-    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, payload, crc_mode=crc_mode, bad_crc=True)
+    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_GET_KEY, seq, payload, crc_mode=crc_mode, bad_crc=True)
     write_frame(dev, frame)
-    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_KEY, timeout_ms)
+    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_GET_KEY, timeout_ms)
 
 
 def test_segment_retry_recovery(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
@@ -384,34 +383,34 @@ def test_segment_retry_recovery(dev: hid.device, timeout_ms: int, crc_mode: str)
 
     # START：payload[0:4] = total_size（小端）
     start_payload = len(data).to_bytes(4, "little")
-    write_frame(dev, build_frame(FRAME_TYPE_START, DATA_TYPE_KEY, seq_start, start_payload, crc_mode=crc_mode))
-    expect_ctrl(dev, FRAME_TYPE_ACK, seq_start, DATA_TYPE_KEY, timeout_ms)
+    write_frame(dev, build_frame(FRAME_TYPE_START, DATA_TYPE_GET_KEY, seq_start, start_payload, crc_mode=crc_mode))
+    expect_ctrl(dev, FRAME_TYPE_ACK, seq_start, DATA_TYPE_GET_KEY, timeout_ms)
 
     # 先发错误序号的 DATA -> 期望收到 NACK 且 RX 上下文仍保留。
     wrong_seq = (seq_start + 2) & 0xFF
     chunk1 = data[:24]
-    write_frame(dev, build_frame(FRAME_TYPE_DATA, DATA_TYPE_KEY, wrong_seq, chunk1, crc_mode=crc_mode))
-    expect_ctrl(dev, FRAME_TYPE_NACK, wrong_seq, DATA_TYPE_KEY, timeout_ms)
+    write_frame(dev, build_frame(FRAME_TYPE_DATA, DATA_TYPE_GET_KEY, wrong_seq, chunk1, crc_mode=crc_mode))
+    expect_ctrl(dev, FRAME_TYPE_NACK, wrong_seq, DATA_TYPE_GET_KEY, timeout_ms)
 
     # 用正确序号重发 -> 期望收到 ACK。
     seq_data = (seq_start + 1) & 0xFF
-    write_frame(dev, build_frame(FRAME_TYPE_DATA, DATA_TYPE_KEY, seq_data, chunk1, crc_mode=crc_mode))
-    expect_ctrl(dev, FRAME_TYPE_ACK, seq_data, DATA_TYPE_KEY, timeout_ms)
+    write_frame(dev, build_frame(FRAME_TYPE_DATA, DATA_TYPE_GET_KEY, seq_data, chunk1, crc_mode=crc_mode))
+    expect_ctrl(dev, FRAME_TYPE_ACK, seq_data, DATA_TYPE_GET_KEY, timeout_ms)
 
     # END 发送剩余字节。
     seq_end = (seq_start + 2) & 0xFF
     chunk2 = data[24:]
-    write_frame(dev, build_frame(FRAME_TYPE_END, DATA_TYPE_KEY, seq_end, chunk2, crc_mode=crc_mode))
-    expect_ctrl(dev, FRAME_TYPE_ACK, seq_end, DATA_TYPE_KEY, timeout_ms)
+    write_frame(dev, build_frame(FRAME_TYPE_END, DATA_TYPE_GET_KEY, seq_end, chunk2, crc_mode=crc_mode))
+    expect_ctrl(dev, FRAME_TYPE_ACK, seq_end, DATA_TYPE_GET_KEY, timeout_ms)
 
 
 def test_single_invalid_seq(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
     """发送单包但 seq != 0，应收到 NACK"""
     seq = 5
     payload = b"bad-seq-single"
-    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, payload, crc_mode=crc_mode)
+    frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_GET_KEY, seq, payload, crc_mode=crc_mode)
     write_frame(dev, frame)
-    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_KEY, timeout_ms)
+    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_GET_KEY, timeout_ms)
 
 
 def test_start_invalid_seq(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
@@ -419,8 +418,8 @@ def test_start_invalid_seq(dev: hid.device, timeout_ms: int, crc_mode: str) -> N
     seq = 3
     total_data = bytes(range(10))
     start_payload = len(total_data).to_bytes(4, "little")
-    write_frame(dev, build_frame(FRAME_TYPE_START, DATA_TYPE_KEY, seq, start_payload, crc_mode=crc_mode))
-    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_KEY, timeout_ms)
+    write_frame(dev, build_frame(FRAME_TYPE_START, DATA_TYPE_GET_KEY, seq, start_payload, crc_mode=crc_mode))
+    expect_ctrl(dev, FRAME_TYPE_NACK, seq, DATA_TYPE_GET_KEY, timeout_ms)
 
 
 def test_device_send_receive(dev: hid.device, timeout_ms: int, crc_mode: str) -> None:
@@ -476,7 +475,7 @@ def test_device_send_receive(dev: hid.device, timeout_ms: int, crc_mode: str) ->
             write_frame(dev, build_frame(FRAME_TYPE_ACK, frame.data_type, frame.seq, b"", crc_mode=crc_mode))
             payload = frame.payload[: frame.length]
             # 当设备返回键位快照（HC165_COUNT 字节）时，以二进制位图打印便于观察按键状态
-            if frame.data_type == DATA_TYPE_KEY and len(payload) >= 1:
+            if frame.data_type == DATA_TYPE_GET_KEY and len(payload) >= 1:
                 raw = int.from_bytes(payload, "little")
                 if raw == 0:
                     keys = 0
@@ -543,7 +542,7 @@ def test_device_send_receive(dev: hid.device, timeout_ms: int, crc_mode: str) ->
                     if recved != total_expected:
                         raise AssertionError(f"END received but length mismatch recved={recved} expected={total_expected}")
                     # 若是键位快照类型，打印二进制；否则直接打印原始 bytes
-                    if frame.data_type == DATA_TYPE_KEY and recv_buf is not None:
+                    if frame.data_type == DATA_TYPE_GET_KEY and recv_buf is not None:
                         raw = int.from_bytes(bytes(recv_buf[:recved]), "little")
                         if raw == 0:
                             keys = 0
@@ -566,7 +565,7 @@ def auto_detect_crc_mode(dev: hid.device, timeout_ms: int) -> str:
         # 按协议要求，单次任务的 seq 必须以 0 开头；每次探测前会 flush_input()
         seq = 0
         flush_input(dev)
-        frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_KEY, seq, probe_payload, crc_mode=mode)
+        frame = build_frame(FRAME_TYPE_SINGLE, DATA_TYPE_GET_KEY, seq, probe_payload, crc_mode=mode)
         write_frame(dev, frame)
         try:
             rsp = read_frame(dev, timeout_ms)

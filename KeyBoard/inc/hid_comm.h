@@ -16,11 +16,10 @@
 #define FRAME_TYPE_OF 0b111     // 溢出包，表示发送方的缓冲区溢出或其他错误
 
 // 数据类型宏定义
-#define DATA_TYPE_KEY 0                  // 键位状态数据
-#define DATA_TYPE_LAYER_KEYMAP 1         // 键位映射数据
-#define DATA_TYPE_GET_KEY 2              // 获取键位状态数据
-#define DATA_TYPE_GET_LAYER_KEYMAP 3     // 获取层键位映射数据
-#define DATA_TYPE_GET_ALL_LAYER_KEYMAP 4 // 获取全部层键位映射数据
+#define DATA_TYPE_SET_LAYER_KEYMAP 0     // 键位映射数据
+#define DATA_TYPE_GET_KEY 1              // 获取键位状态数据
+#define DATA_TYPE_GET_LAYER_KEYMAP 2     // 获取层键位映射数据
+#define DATA_TYPE_GET_ALL_LAYER_KEYMAP 3 // 获取全部层键位映射数据
 
 /* 重试上限：连续 NACK 超过该值则丢弃当前接收任务 */
 #define HID_RETRY_LIMIT 5U
