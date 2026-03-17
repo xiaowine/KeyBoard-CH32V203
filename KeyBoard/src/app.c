@@ -4,25 +4,21 @@
 #include "key.h"
 #include "usb_lib.h"
 #include "usb_desc.h"
-
-#include "hid_comm.h"
 #include "keymap.h"
 #include "keymap_loader.h"
 
-static volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
-static volatile uint16_t scan_tick_counter = 0;
-static uint8_t last_snapshot[HC165_COUNT];
-static uint8_t key_pressed_count = 0;
-static uint8_t debug = 0;
+volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
+volatile uint16_t scan_tick_counter = 0;
+uint8_t last_snapshot[HC165_COUNT];
+uint8_t debug_key_pressed_count = 0;
+uint8_t is_debug_mode = 0;
 
 /* 子采样槽位管理（0 -> 1 -> 2 -> 0） */
-static uint8_t next_sample_slot = 0;
-static volatile uint8_t active_sample_slot = 0;
-/* 扫描超时保护（单位：TIM3 update tick） */
-#define KEY_SCAN_TIMEOUT_TICKS 6U
-static volatile uint8_t scan_timeout_ticks = 0;
+uint8_t next_sample_slot = 0;
+volatile uint8_t active_sample_slot = 0;
+volatile uint8_t scan_timeout_ticks = 0;
 
-void my_hid_comm_callback(uint8_t *data, uint16_t len);
+
 
 void app_init(void)
 {
@@ -106,16 +102,15 @@ void app_init(void)
     Set_USB_Clock();
     USB_Init();
     USB_Interrupts_Config();
-
-    // 注册 HID 通信回调函数
-    hid_comm_set_callback(my_hid_comm_callback);
-
     PRINT("App Init OK!\r\n");
 }
 
 void app_run(void)
 {
-    hid_comm_process();
+    if (true)
+    {
+        kb_send_snapshot(last_snapshot);
+    }
     switch (key_scan_state)
     {
     case KEY_STATE_SCANNING:
@@ -133,8 +128,6 @@ void app_run(void)
             }
 
             next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
-
-            hid_comm_send(last_snapshot, HC165_COUNT);
             key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
             TIM_Cmd(TIM3, ENABLE);
@@ -151,35 +144,33 @@ void app_run(void)
         break;
     }
 
-    /* 定期输出数据（每秒一次）*/
     if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
     {
         if (key_get_debounce_state(2) == KEY_DEBOUNCE_PRESSED)
         {
-            key_pressed_count = key_pressed_count + 1;
+            debug_key_pressed_count = debug_key_pressed_count + 1;
         }
         else
         {
-            key_pressed_count = 0;
+            debug_key_pressed_count = 0;
         }
         scan_tick_counter = 0;
-        if (key_pressed_count >= 2)
+        if (debug_key_pressed_count >= 2)
         {
-            if (debug)
+            if (is_debug_mode)
             {
-                debug = 0;
+                is_debug_mode = 0;
                 GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
                 PRINT("Debug mode disabled\r\n");
             }
             else
             {
-                debug = 1;
+                is_debug_mode = 1;
                 GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, DISABLE);
                 PRINT("Debug mode enabled\r\n");
             }
-            key_pressed_count = 0;
+            debug_key_pressed_count = 0;
         }
-        // output_data((const uint8_t *)last_snapshot);
     }
 }
 
@@ -206,21 +197,11 @@ RAM INTF void TIM3_IRQHandler(void)
     }
 }
 
-RAM INTF void TIM4_IRQHandler(void)
-{
-    if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
-    {
-        kb_send_snapshot(last_snapshot);
-        TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
-    }
-}
-
-void my_hid_comm_callback(uint8_t *data, uint16_t len)
-{
-    PRINT("App: Received %d bytes from HID comm\r\n", len);
-    // 这里可以添加对接收到的数据的处理逻辑
-    for (uint16_t i = 0; i < len; i++)
-    {
-        PRINT("  Byte %d: 0x%02X\r\n", i, data[i]);
-    }
-}
+// RAM INTF void TIM4_IRQHandler(void)
+// {
+//     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
+//     {
+//         kb_send_snapshot(last_snapshot);
+//         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+//     }
+// }

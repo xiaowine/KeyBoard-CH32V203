@@ -496,10 +496,7 @@ RESULT USBD_NoData_Setup(uint8_t RequestNo)
             {
                 return USB_UNSUPPORT;
             }
-            else
-            {
-                HID_Protocol_Value[wIndex0] = pInformation->USBwValues.bw.bb0;
-            }
+            HID_Protocol_Value[wIndex0] = pInformation->USBwValues.bw.bb0;
         }
         else
         {

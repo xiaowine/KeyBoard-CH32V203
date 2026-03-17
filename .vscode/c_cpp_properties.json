@@ -7,6 +7,7 @@
                 "${workspaceFolder}/Debug",
                 "${workspaceFolder}/USBLIB",
                 "${workspaceFolder}/Core",
+                "${workspaceFolder}/KeyBoard",
                 "${workspaceFolder}/User",
                 "${workspaceFolder}/Peripheral/inc",
                 "${workspaceFolder}/**"
@@ -16,6 +17,7 @@
                     "${workspaceFolder}/Debug",
                     "${workspaceFolder}/USBLIB",
                     "${workspaceFolder}/Core",
+                    "${workspaceFolder}/KeyBoard",
                     "${workspaceFolder}/User",
                     "${workspaceFolder}/Peripheral/inc",
                     "${workspaceFolder}/**"
