@@ -17,7 +17,7 @@ uint8_t is_debug_mode = 0;
 uint8_t next_sample_slot = 0;
 volatile uint8_t active_sample_slot = 0;
 volatile uint8_t scan_timeout_ticks = 0;
-
+volatile uint8_t time_tick = 0;
 
 
 void app_init(void)
@@ -81,7 +81,7 @@ void app_init(void)
         RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
 
         TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
-        TIM_TimeBaseInitStructure.TIM_Period = 999;
+        TIM_TimeBaseInitStructure.TIM_Period = 4999;
         TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
@@ -107,9 +107,10 @@ void app_init(void)
 
 void app_run(void)
 {
-    if (true)
+    if (time_tick)
     {
         kb_send_snapshot(last_snapshot);
+        time_tick = 0;
     }
     switch (key_scan_state)
     {
@@ -197,11 +198,10 @@ RAM INTF void TIM3_IRQHandler(void)
     }
 }
 
-// RAM INTF void TIM4_IRQHandler(void)
-// {
-//     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
-//     {
-//         kb_send_snapshot(last_snapshot);
-//         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
-//     }
-// }
+RAM INTF void TIM4_IRQHandler(void)
+{
+    if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
+    {
+        TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+    }
+}
