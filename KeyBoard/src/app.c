@@ -1,5 +1,6 @@
 #include "app.h"
 
+#include "comm_controller.h"
 #include "encode.h"
 #include "key.h"
 #include "usb_lib.h"
