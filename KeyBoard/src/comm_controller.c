@@ -28,13 +28,7 @@ static void release_receive_payload_buffer(void)
     receive_handle.received_payload_len = 0;
 }
 
-void comm_controller_process()
-{
-    comm_recv_process();
-    comm_send_process();
-}
-
-void comm_send_no_payload(const FRAME_TYPE type)
+void load_no_payload_flag(const FRAME_TYPE type)
 {
     memset(&send_handle.frame_data, 0, sizeof(send_handle.frame_data));
     send_handle.frame_data = (FrameData){
@@ -42,6 +36,21 @@ void comm_send_no_payload(const FRAME_TYPE type)
         .payload_length = 0,
     };
     send_handle.send_pending = 1;
+}
+
+void comm_send(FrameData frame_data)
+{
+    uint32_t words[CRC_WORD_SIZE] = {0};
+    memcpy(words, &frame_data, CRC_BYTES_SIZE);
+    CRC_ResetDR();
+    frame_data.crc = CRC_CalcBlockCRC(words, CRC_WORD_SIZE);
+    USBD_SendCustomData((uint8_t *)&frame_data, sizeof(FrameData));
+}
+
+void comm_controller_process()
+{
+    comm_recv_process();
+    comm_send_process();
 }
 
 void comm_recv_process()
@@ -54,7 +63,7 @@ void comm_recv_process()
         memcpy(&frame_data, p, sizeof(frame_data));
         if (frame_data.seq_num > SEQ_MAX_NUM)
         {
-            comm_send_no_payload(FRAME_TYPE_ERROR);
+            load_no_payload_flag(FRAME_TYPE_ERROR);
             return;
         }
 
@@ -65,7 +74,7 @@ void comm_recv_process()
         CRC_ResetDR();
         if (frame_crc != CRC_CalcBlockCRC(words, CRC_WORD_SIZE))
         {
-            comm_send_no_payload(FRAME_TYPE_NACK);
+            load_no_payload_flag(FRAME_TYPE_NACK);
             receive_handle.retry_count++;
             return;
         }
@@ -80,7 +89,7 @@ void comm_recv_process()
                 payload_all_len = parse_u16_le(frame_data.payload.data);
                 if (payload_all_len > FRAME_RECV_MAX_BYTES)
                 {
-                    comm_send_no_payload(FRAME_TYPE_ERROR);
+                    load_no_payload_flag(FRAME_TYPE_ERROR);
                     break;
                 }
 
@@ -90,7 +99,7 @@ void comm_recv_process()
                     receive_handle.payload_buf = (uint8_t *)malloc(payload_all_len);
                     if (receive_handle.payload_buf == NULL)
                     {
-                        comm_send_no_payload(FRAME_TYPE_ERROR);
+                        load_no_payload_flag(FRAME_TYPE_ERROR);
                         break;
                     }
                 }
@@ -98,12 +107,12 @@ void comm_recv_process()
                 receive_handle.expected_payload_len = payload_all_len;
                 receive_handle.received_payload_len = 0;
                 receive_handle.last_sqe_num = 0;
-                comm_send_no_payload(FRAME_TYPE_ACK);
+                load_no_payload_flag(FRAME_TYPE_ACK);
             }
             else
             {
                 release_receive_payload_buffer();
-                comm_send_no_payload(FRAME_TYPE_ERROR);
+                load_no_payload_flag(FRAME_TYPE_ERROR);
             }
             break;
         case FRAME_TYPE_DATA:
@@ -114,20 +123,20 @@ void comm_recv_process()
                 if (frame_payload_len > FRAME_PAYLOAD_DATA_SIZE || frame_payload_len == 0)
                 {
                     release_receive_payload_buffer();
-                    comm_send_no_payload(FRAME_TYPE_ERROR);
+                    load_no_payload_flag(FRAME_TYPE_ERROR);
                     break;
                 }
 
                 if (frame_payload_len > receive_handle.expected_payload_len - receive_handle.received_payload_len)
                 {
                     release_receive_payload_buffer();
-                    comm_send_no_payload(FRAME_TYPE_ERROR);
+                    load_no_payload_flag(FRAME_TYPE_ERROR);
                     break;
                 }
 
                 if (receive_handle.payload_buf == NULL)
                 {
-                    comm_send_no_payload(FRAME_TYPE_ERROR);
+                    load_no_payload_flag(FRAME_TYPE_ERROR);
                     break;
                 }
                 memcpy(receive_handle.payload_buf + receive_handle.received_payload_len,
@@ -135,7 +144,7 @@ void comm_recv_process()
 
                 receive_handle.received_payload_len += frame_payload_len;
                 receive_handle.last_sqe_num++;
-                comm_send_no_payload(FRAME_TYPE_ACK);
+                load_no_payload_flag(FRAME_TYPE_ACK);
                 if (receive_handle.received_payload_len == receive_handle.expected_payload_len)
                 {
                     // TODO
@@ -144,12 +153,12 @@ void comm_recv_process()
             else
             {
                 release_receive_payload_buffer();
-                comm_send_no_payload(FRAME_TYPE_ERROR);
+                load_no_payload_flag(FRAME_TYPE_ERROR);
             }
 
             break;
         case FRAME_TYPE_ACK:
-            receive_handle.receive_ack = 1;
+            send_handle.receive_ack = 1;
             break;
         case FRAME_TYPE_NACK:
             send_handle.status = SEND_STATUS_RETRY;
@@ -180,29 +189,77 @@ void comm_recv_process()
 
 void comm_send_process()
 {
-    if (send_handle.send_pending)
+    if (send_handle.send_pending && send_handle.status == SEND_STATUS_IDLE)
     {
-        uint32_t words[CRC_WORD_SIZE] = {0};
-        memcpy(words, &send_handle.frame_data, CRC_BYTES_SIZE);
-        CRC_ResetDR();
-        send_handle.frame_data.crc = CRC_CalcBlockCRC(words, CRC_WORD_SIZE);
-        if (!USBD_SendCustomData((uint8_t *)&send_handle.frame_data, sizeof(send_handle.frame_data)))
-        {
-            send_handle.send_pending = 0;
-        }
+        send_handle.status = SEND_STATUS_FRAME;
     }
-    else
+
+    switch (send_handle.status)
     {
-        switch (send_handle.status)
+    case SEND_STATUS_FRAME:
+    {
+        send_handle.last_status = SEND_STATUS_FRAME;
+        comm_send(send_handle.frame_data);
+        send_handle.send_pending = 0;
+        send_handle.status = SEND_STATUS_WAIT_RESPONSE;
+        break;
+    }
+    case SEND_STATUS_WAIT_RESPONSE:
+    {
+        if (send_handle.receive_ack)
         {
-        case SEND_STATUS_START_FRAME:
+            send_handle.receive_ack = 0;
+            switch (send_handle.last_status)
+            {
+            case SEND_STATUS_FRAME:
+            {
+                // TODO 是否发送完，没发送完继续发送下一帧然后等待响应
+                // TODO 发送完了就直接置空闲状态
+                send_handle.status = SEND_STATUS_IDLE;
+                break;
+            }
+            case SEND_STATUS_RETRY:
+            {
+                send_handle.retry_count = 0;
+                send_handle.status = SEND_STATUS_IDLE;
+                // TODO 重发完成，是否发送完，没发送完跳回SEND_STATUS_FRAME
+                // TODO 发送完了就直接置空闲状态
+                break;
+            }
+            default:
+                send_handle.status = SEND_STATUS_IDLE;
+                break;
+            }
+        }
+        else
         {
-            break;
+            send_handle.retry_count++;
+            send_handle.status = SEND_STATUS_RETRY;
         }
-        default:
+
+        if (send_handle.retry_count > RETRY_MAX_CNT)
         {
-            break;
+            memset(&send_handle.frame_data, 0, sizeof(send_handle.frame_data));
+            send_handle.frame_data = (FrameData){
+                .type = FRAME_TYPE_ERROR,
+                .payload_length = 0,
+            };
+            comm_send(send_handle.frame_data);
+            PRINT("Send data retry count exceeded, resetting state.\r\n");
+            send_handle.status = SEND_STATUS_IDLE;
         }
-        }
+        break;
+    }
+    case SEND_STATUS_RETRY:
+    {
+        send_handle.last_status = SEND_STATUS_RETRY;
+        comm_send(send_handle.frame_data);
+        send_handle.status = SEND_STATUS_WAIT_RESPONSE;
+        break;
+    }
+    default:
+    {
+        break;
+    }
     }
 }

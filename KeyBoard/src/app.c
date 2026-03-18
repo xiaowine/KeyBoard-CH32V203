@@ -17,8 +17,8 @@ uint8_t is_debug_mode = 0;
 uint8_t next_sample_slot = 0;
 volatile uint8_t active_sample_slot = 0;
 volatile uint8_t scan_timeout_ticks = 0;
-volatile uint8_t time_tick = 0;
-
+volatile uint8_t time1ms_tick = 0;
+volatile uint8_t time5ms_tick = 0;
 
 void app_init(void)
 {
@@ -107,10 +107,15 @@ void app_init(void)
 
 void app_run(void)
 {
-    if (time_tick)
+    if (time1ms_tick)
     {
         kb_send_snapshot(last_snapshot);
-        time_tick = 0;
+        time1ms_tick = 0;
+    }
+    if (time5ms_tick)
+    {
+        comm_controller_process();
+        time5ms_tick = 0;
     }
     switch (key_scan_state)
     {
@@ -202,6 +207,7 @@ RAM INTF void TIM4_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
     {
+        time5ms_tick = 1;
         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
     }
 }

@@ -33,10 +33,9 @@ typedef enum
 typedef enum
 {
     SEND_STATUS_IDLE = 0u,
-    SEND_STATUS_START_FRAME = 1u,
-    SEND_STATUS_WAIT_RESPONSE = 2u,
-    SEND_STATUS_FRAME = 3u,
-    SEND_STATUS_RETRY = 4u,
+    SEND_STATUS_WAIT_RESPONSE = 1u,
+    SEND_STATUS_FRAME = 2u,
+    SEND_STATUS_RETRY = 3u,
 } SEND_STATUS;
 
 typedef struct PACKED
@@ -62,7 +61,6 @@ typedef struct PACKED
     uint16_t expected_payload_len;
     uint16_t received_payload_len;
     uint8_t* payload_buf;
-    uint8_t receive_ack;
     uint8_t need_ack;
 } ReceiveHandle;
 
@@ -71,8 +69,10 @@ typedef struct PACKED
     FrameData frame_data;
     uint8_t last_sqe_unm;
     SEND_STATUS status;
+    SEND_STATUS last_status;
     uint8_t retry_count;
     uint8_t send_pending;
+    uint8_t receive_ack;
 } SendHandle;
 
 void comm_controller_process();
