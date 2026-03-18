@@ -31,6 +31,7 @@ DEFAULT_OBSERVE_SEC = max(0.6, 1.2 * _TIME_SCALE)
 DEFAULT_START_FLUSH_MS = _scale_ms(250, 80)
 DEFAULT_CASE_FLUSH_MS = _scale_ms(120, 40)
 DEFAULT_STRESS_FLUSH_MS = _scale_ms(80, 24)
+DEFAULT_STEP_FLUSH_MS = _scale_ms(40, 12)
 
 _TYPE_DEFAULTS = {
     "FRAME_TYPE_ERROR": 0,
@@ -38,11 +39,11 @@ _TYPE_DEFAULTS = {
     "FRAME_TYPE_DATA": 2,
     "FRAME_TYPE_ACK": 3,
     "FRAME_TYPE_NACK": 4,
-    "DATA_TYPE_SET_LAYER_KEYMAP": 0,
-    "DATA_TYPE_GET_KEY": 1,
-    "DATA_TYPE_GET_LAYER_KEYMAP": 2,
-    "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 3,
-    "DATA_TYPE_SET_LAYER": 4,
+    "DATA_TYPE_GET_KEY": 0,
+    "DATA_TYPE_GET_LAYER_KEYMAP": 1,
+    "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 2,
+    "DATA_TYPE_SET_LAYER": 3,
+    "DATA_TYPE_SET_LAYER_KEYMAP": 4,
 }
 
 
@@ -71,6 +72,7 @@ DATA_TYPE_GET_KEY = _TYPE_VALUES["DATA_TYPE_GET_KEY"]
 DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
 DATA_TYPE_GET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_ALL_LAYER_KEYMAP"]
 DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
+TRANSPORT_TEST_PAYLOAD_TYPE = DATA_TYPE_SET_LAYER
 GET_KEY_EXPECTED_REPLY_LEN = 3
 
 
@@ -255,7 +257,14 @@ def read_frame(h: hid.device, timeout_ms: int = READ_TIMEOUT_MS) -> Optional[byt
 def flush_in(h: hid.device, ms: int = 200) -> None:
     end_t = time.time() + ms / 1000.0
     while time.time() < end_t:
-        _ = read_frame(h, timeout_ms=FLUSH_READ_TIMEOUT_MS)
+        buf = read_frame(h, timeout_ms=FLUSH_READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+        # Flushing still needs protocol ACK to avoid peer-side resend overflow.
+        send_ack_for_peer(h, parsed["seq"])
 
 
 def wait_response_and_auto_ack(
@@ -309,10 +318,27 @@ def format_recent_frames(frames: List[Dict[str, int]]) -> str:
     )
 
 
-def send_start_expect_ack(h: hid.device, total_len: int, observe_sec: float, received_all: List[Dict[str, int]]) -> bool:
-    write_frame(h, build_frame(seq=0, frame_type=FRAME_TYPE_START, payload_data=struct.pack("<H", total_len)))
+def send_start_expect_ack(
+    h: hid.device,
+    total_len: int,
+    observe_sec: float,
+    received_all: List[Dict[str, int]],
+    payload_type: int = TRANSPORT_TEST_PAYLOAD_TYPE,
+) -> bool:
+    write_frame(
+        h,
+        build_frame(
+            seq=0,
+            frame_type=FRAME_TYPE_START,
+            payload_type=payload_type,
+            payload_data=struct.pack("<H", total_len),
+        ),
+    )
     resp, rxs = wait_response_and_auto_ack(h, observe_sec, expect_types=(FRAME_TYPE_ACK,))
     received_all.extend(rxs)
+    if resp is not None:
+        # Drain possible delayed retransmissions so next stage won't consume stale ACK.
+        flush_in(h, ms=DEFAULT_STEP_FLUSH_MS)
     return resp is not None
 
 
@@ -323,11 +349,24 @@ def send_data_expect_type(
     observe_sec: float,
     expected: int,
     received_all: List[Dict[str, int]],
+    payload_type: int = TRANSPORT_TEST_PAYLOAD_TYPE,
     bad_crc: bool = False,
 ) -> bool:
-    write_frame(h, build_frame(seq=seq, frame_type=FRAME_TYPE_DATA, payload_data=payload, force_bad_crc=bad_crc))
+    write_frame(
+        h,
+        build_frame(
+            seq=seq,
+            frame_type=FRAME_TYPE_DATA,
+            payload_type=payload_type,
+            payload_data=payload,
+            force_bad_crc=bad_crc,
+        ),
+    )
     resp, rxs = wait_response_and_auto_ack(h, observe_sec, expect_types=(expected,))
     received_all.extend(rxs)
+    if resp is not None:
+        # Keep link in sync between adjacent steps.
+        flush_in(h, ms=DEFAULT_STEP_FLUSH_MS)
     return resp is not None
 
 
@@ -934,7 +973,7 @@ def main() -> int:
         try:
             flush_in(h, ms=DEFAULT_START_FLUSH_MS)
             suites = [
-                # ("normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
+                ("normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
                 ("normal receive test (multi DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
                 ("bad CRC test (single DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
                 ("bad CRC test (multi DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
