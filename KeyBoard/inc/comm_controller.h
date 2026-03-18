@@ -10,6 +10,7 @@
 #define FRAME_PAYLOAD_DATA_SIZE (sizeof(((FrameData *)0)->payload.data))
 #define RETRY_MAX_CNT 10u
 #define FRAME_RECV_MAX_BYTES 4096u
+#define FRAME_SEND_MAX_BYTES 4096u
 #define SEQ_MAX_NUM 100u
 
 typedef enum
@@ -23,12 +24,13 @@ typedef enum
 
 typedef enum
 {
-    DATA_TYPE_SET_LAYER_KEYMAP = 0u,
-    DATA_TYPE_GET_KEY = 1u,
-    DATA_TYPE_GET_LAYER_KEYMAP = 2u,
-    DATA_TYPE_GET_ALL_LAYER_KEYMAP = 3u,
-    DATA_TYPE_SET_LAYER = 4u
+    DATA_TYPE_GET_KEY = 0u,
+    DATA_TYPE_GET_LAYER_KEYMAP = 1u,
+    DATA_TYPE_GET_ALL_LAYER_KEYMAP = 2u,
+    DATA_TYPE_SET_LAYER = 3u,
+    DATA_TYPE_SET_LAYER_KEYMAP = 4u,
 } DATA_TYPE;
+
 
 typedef enum
 {
@@ -53,28 +55,65 @@ typedef struct PACKED
     uint32_t crc;
 } FrameData;
 
-typedef struct PACKED
+typedef enum
 {
-    FrameData frame_data;
-    uint8_t last_sqe_num;
+    TX_SOURCE_NONE = 0u,
+    TX_SOURCE_CONTROL = 1u,
+    TX_SOURCE_REPLY_START = 2u,
+    TX_SOURCE_REPLY_DATA = 3u
+} TX_SOURCE;
+
+typedef enum
+{
+    REPLY_PHASE_IDLE = 0u,
+    REPLY_PHASE_SEND_START = 1u,
+    REPLY_PHASE_SEND_DATA = 2u
+} REPLY_PHASE;
+
+typedef struct
+{
+    uint8_t payload_type;
+    uint8_t last_seq_num;
     uint8_t retry_count;
+    uint8_t need_ack;
     uint16_t expected_payload_len;
     uint16_t received_payload_len;
     uint8_t* payload_buf;
-    uint8_t need_ack;
 } ReceiveHandle;
 
-typedef struct PACKED
+typedef struct
 {
     FrameData frame_data;
-    uint8_t last_sqe_unm;
     SEND_STATUS status;
     SEND_STATUS last_status;
     uint8_t retry_count;
-    uint8_t send_pending;
     uint8_t receive_ack;
+    uint8_t receive_nack;
+    TX_SOURCE source;
 } SendHandle;
 
-void comm_controller_process();
+typedef struct
+{
+    uint8_t pending;
+    FRAME_TYPE type;
+} ControlQueue;
+
+typedef struct
+{
+    uint8_t active;
+    uint8_t payload_type;
+    uint8_t next_seq_num;
+    REPLY_PHASE phase;
+    uint16_t payload_len;
+    uint16_t acked_payload_len;
+    uint8_t* payload_buf;
+} ReplySession;
+
+
+typedef void (*comm_rx_callback_t)(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
+
+void comm_controller_process(void);
+void comm_register_rx_callback(comm_rx_callback_t callback);
+void comm_queue_reply(uint8_t payload_type, const uint8_t* data, uint16_t len);
 
 #endif

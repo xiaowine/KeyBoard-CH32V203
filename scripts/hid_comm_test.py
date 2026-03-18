@@ -2,10 +2,12 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import re
 import struct
 import sys
 import time
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Callable, Dict, List, Optional, Tuple
 
 import hid
 
@@ -14,17 +16,130 @@ FRAME_SIZE = 64
 CRC_INPUT_SIZE = 60
 MAX_DATA_PAYLOAD = 56
 POLY = 0x04C11DB7
+FW_PROCESS_INTERVAL_MS = 2
+_BASE_INTERVAL_MS = 5
+_TIME_SCALE = FW_PROCESS_INTERVAL_MS / _BASE_INTERVAL_MS
 
-FRAME_TYPE_ERROR = 0
-FRAME_TYPE_START = 1
-FRAME_TYPE_DATA = 2
-FRAME_TYPE_ACK = 3
-FRAME_TYPE_NACK = 4
+
+def _scale_ms(value_ms: int, minimum_ms: int) -> int:
+    return max(minimum_ms, int(round(value_ms * _TIME_SCALE)))
+
+
+READ_TIMEOUT_MS = _scale_ms(80, 12)
+FLUSH_READ_TIMEOUT_MS = _scale_ms(20, 6)
+DEFAULT_OBSERVE_SEC = max(0.6, 1.2 * _TIME_SCALE)
+DEFAULT_START_FLUSH_MS = _scale_ms(250, 80)
+DEFAULT_CASE_FLUSH_MS = _scale_ms(120, 40)
+DEFAULT_STRESS_FLUSH_MS = _scale_ms(80, 24)
+
+_TYPE_DEFAULTS = {
+    "FRAME_TYPE_ERROR": 0,
+    "FRAME_TYPE_START": 1,
+    "FRAME_TYPE_DATA": 2,
+    "FRAME_TYPE_ACK": 3,
+    "FRAME_TYPE_NACK": 4,
+    "DATA_TYPE_SET_LAYER_KEYMAP": 0,
+    "DATA_TYPE_GET_KEY": 1,
+    "DATA_TYPE_GET_LAYER_KEYMAP": 2,
+    "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 3,
+    "DATA_TYPE_SET_LAYER": 4,
+}
+
+
+def load_type_values_from_header() -> Dict[str, int]:
+    header_path = Path(__file__).resolve().parent.parent / "KeyBoard" / "inc" / "comm_controller.h"
+    values = dict(_TYPE_DEFAULTS)
+    try:
+        text = header_path.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return values
+
+    for name, value in re.findall(r"\b((?:FRAME|DATA)_TYPE_[A-Z0-9_]+)\s*=\s*(\d+)u?\b", text):
+        if name in values:
+            values[name] = int(value)
+    return values
+
+
+_TYPE_VALUES = load_type_values_from_header()
+FRAME_TYPE_ERROR = _TYPE_VALUES["FRAME_TYPE_ERROR"]
+FRAME_TYPE_START = _TYPE_VALUES["FRAME_TYPE_START"]
+FRAME_TYPE_DATA = _TYPE_VALUES["FRAME_TYPE_DATA"]
+FRAME_TYPE_ACK = _TYPE_VALUES["FRAME_TYPE_ACK"]
+FRAME_TYPE_NACK = _TYPE_VALUES["FRAME_TYPE_NACK"]
+DATA_TYPE_SET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_LAYER_KEYMAP"]
+DATA_TYPE_GET_KEY = _TYPE_VALUES["DATA_TYPE_GET_KEY"]
+DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
+DATA_TYPE_GET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_ALL_LAYER_KEYMAP"]
+DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
+GET_KEY_EXPECTED_REPLY_LEN = 3
+
+
+def _read_define_u32(text: str, name: str) -> Optional[int]:
+    m = re.search(rf"#define\s+{name}\s+\(?\s*(\d+)\s*\)?", text)
+    if m:
+        return int(m.group(1))
+    return None
+
+
+def load_keymap_reply_sizes() -> Tuple[int, int]:
+    root = Path(__file__).resolve().parent.parent
+    key_h = root / "KeyBoard" / "inc" / "key.h"
+    keymap_h = root / "KeyBoard" / "inc" / "keymap.h"
+    keymap_loader_h = root / "KeyBoard" / "inc" / "keymap_loader.h"
+
+    hc165_count = 3
+    key_total_keys = 24
+    max_code = 3
+    keymap_layers = 10
+
+    try:
+        key_text = key_h.read_text(encoding="utf-8", errors="ignore")
+        keymap_text = keymap_h.read_text(encoding="utf-8", errors="ignore")
+        keymap_loader_text = keymap_loader_h.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        layer_size_fallback = (1 + 2 * max_code + 1) * key_total_keys
+        return layer_size_fallback, layer_size_fallback * keymap_layers
+
+    hc_val = _read_define_u32(key_text, "HC165_COUNT")
+    if hc_val is not None:
+        hc165_count = hc_val
+
+    key_total_val = _read_define_u32(key_text, "KEY_TOTAL_KEYS")
+    if key_total_val is not None:
+        key_total_keys = key_total_val
+    else:
+        m_total = re.search(r"#define\s+KEY_TOTAL_KEYS\s+\(\s*HC165_COUNT\s*\*\s*(\d+)\s*\)", key_text)
+        if m_total:
+            key_total_keys = hc165_count * int(m_total.group(1))
+
+    max_code_val = _read_define_u32(keymap_text, "MAX_CODE")
+    if max_code_val is not None:
+        max_code = max_code_val
+
+    layers_val = _read_define_u32(keymap_loader_text, "KEYMAP_LAYERS")
+    if layers_val is not None:
+        keymap_layers = layers_val
+    else:
+        m_layers = re.search(r"#define\s+KEYMAP_LAYERS\s+\(\(\s*(\d+)\s*-\s*(\d+)\s*\)\s*/", keymap_loader_text)
+        if m_layers:
+            flash_total = int(m_layers.group(1))
+            flash_header = int(m_layers.group(2))
+            layer_size_temp = (1 + 2 * max_code + 1) * key_total_keys
+            if layer_size_temp > 0:
+                keymap_layers = (flash_total - flash_header) // layer_size_temp
+
+    key_mapping_size = 1 + 2 * max_code + 1
+    layer_size = key_mapping_size * key_total_keys
+    all_size = layer_size * keymap_layers
+    return layer_size, all_size
+
+
+LAYER_KEYMAP_REPLY_LEN, ALL_LAYER_KEYMAP_REPLY_LEN = load_keymap_reply_sizes()
 
 
 def stm32_crc32_words_le(data60: bytes) -> int:
     if len(data60) != CRC_INPUT_SIZE:
-        raise ValueError(f"CRC 输入长度必须为 {CRC_INPUT_SIZE} 字节")
+        raise ValueError(f"CRC input length must be {CRC_INPUT_SIZE} bytes")
 
     crc = 0xFFFFFFFF
     for i in range(0, CRC_INPUT_SIZE, 4):
@@ -86,7 +201,7 @@ def type_name(frame_type: int) -> str:
 
 def chunk_payload(payload: bytes, chunk_size: int) -> List[bytes]:
     if chunk_size <= 0:
-        raise ValueError("chunk_size 必须大于 0")
+        raise ValueError("chunk_size \u5fc5\u987b\u5927\u4e8e 0")
     return [payload[i : i + chunk_size] for i in range(0, len(payload), chunk_size)]
 
 
@@ -110,7 +225,7 @@ def open_device(vid: int, pid: int, path: Optional[str]) -> hid.device:
         return h
     info = pick_custom_device(vid, pid)
     if info is None:
-        raise RuntimeError(f"未找到设备：VID=0x{vid:04X}, PID=0x{pid:04X}")
+        raise RuntimeError(f"\u672a\u627e\u5230\u8bbe\u5907\uff1aVID=0x{vid:04X}, PID=0x{pid:04X}")
     h.open_path(info["path"])
     return h
 
@@ -118,14 +233,14 @@ def open_device(vid: int, pid: int, path: Optional[str]) -> hid.device:
 def write_frame(h: hid.device, frame64: bytes) -> None:
     wrote = h.write(b"\x00" + frame64)
     if wrote <= 0:
-        raise RuntimeError("HID 写入失败")
+        raise RuntimeError("HID \u5199\u5165\u5931\u8d25")
 
 
 def send_ack_for_peer(h: hid.device, peer_seq: int) -> None:
     write_frame(h, build_frame(seq=peer_seq, frame_type=FRAME_TYPE_ACK))
 
 
-def read_frame(h: hid.device, timeout_ms: int = 100) -> Optional[bytes]:
+def read_frame(h: hid.device, timeout_ms: int = READ_TIMEOUT_MS) -> Optional[bytes]:
     raw = h.read(FRAME_SIZE, timeout_ms)
     if not raw:
         return None
@@ -140,7 +255,7 @@ def read_frame(h: hid.device, timeout_ms: int = 100) -> Optional[bytes]:
 def flush_in(h: hid.device, ms: int = 200) -> None:
     end_t = time.time() + ms / 1000.0
     while time.time() < end_t:
-        _ = read_frame(h, timeout_ms=20)
+        _ = read_frame(h, timeout_ms=FLUSH_READ_TIMEOUT_MS)
 
 
 def wait_response_and_auto_ack(
@@ -153,7 +268,7 @@ def wait_response_and_auto_ack(
     rx_all: List[Dict[str, int]] = []
 
     while time.time() < end_t:
-        buf = read_frame(h, timeout_ms=80)
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
         if buf is None:
             continue
         parsed = parse_frame(buf)
@@ -162,7 +277,7 @@ def wait_response_and_auto_ack(
         parsed["t_ms"] = int((time.time() - t0) * 1000)
         rx_all.append(parsed)
         print(
-            f"[{parsed['t_ms']:>4} ms] 收到 type={type_name(parsed['type'])}, "
+            f"[{parsed['t_ms']:>4} ms] \u6536\u5230 type={type_name(parsed['type'])}, "
             f"seq={parsed['seq']}, payload_len={parsed['payload_len']}"
         )
         send_ack_for_peer(h, parsed["seq"])
@@ -175,16 +290,30 @@ def print_summary(received: List[Dict[str, int]], title: str) -> None:
     ack_cnt = sum(1 for x in received if x["type"] == FRAME_TYPE_ACK)
     nack_cnt = sum(1 for x in received if x["type"] == FRAME_TYPE_NACK)
     err_cnt = sum(1 for x in received if x["type"] == FRAME_TYPE_ERROR)
-    print(f"\n{title} 统计：")
-    print(f"  总接收帧数={len(received)}")
+    print(f"\n{title} summary:")
+    print(f"  total frames: {len(received)}")
     print(f"  ACK={ack_cnt}, NACK={nack_cnt}, ERROR={err_cnt}")
+
+
+def fill_diag(diag: Optional[Dict[str, object]], reason: str, received: List[Dict[str, int]]) -> None:
+    if diag is None:
+        return
+    diag["reason"] = reason
+    diag["recent_frames"] = received[-10:]
+
+
+def format_recent_frames(frames: List[Dict[str, int]]) -> str:
+    return " | ".join(
+        f"{type_name(x['type'])}(seq={x['seq']},len={x['payload_len']},ptype={x['payload_type']},t={x.get('t_ms', -1)}ms)"
+        for x in frames
+    )
 
 
 def send_start_expect_ack(h: hid.device, total_len: int, observe_sec: float, received_all: List[Dict[str, int]]) -> bool:
     write_frame(h, build_frame(seq=0, frame_type=FRAME_TYPE_START, payload_data=struct.pack("<H", total_len)))
-    resp, rxs = wait_response_and_auto_ack(h, observe_sec)
+    resp, rxs = wait_response_and_auto_ack(h, observe_sec, expect_types=(FRAME_TYPE_ACK,))
     received_all.extend(rxs)
-    return resp is not None and resp["type"] == FRAME_TYPE_ACK
+    return resp is not None
 
 
 def send_data_expect_type(
@@ -197,13 +326,13 @@ def send_data_expect_type(
     bad_crc: bool = False,
 ) -> bool:
     write_frame(h, build_frame(seq=seq, frame_type=FRAME_TYPE_DATA, payload_data=payload, force_bad_crc=bad_crc))
-    resp, rxs = wait_response_and_auto_ack(h, observe_sec)
+    resp, rxs = wait_response_and_auto_ack(h, observe_sec, expect_types=(expected,))
     received_all.extend(rxs)
-    return resp is not None and resp["type"] == expected
+    return resp is not None
 
 
 def run_normal_flow_test(h: hid.device, observe_sec: float, multi_data: bool) -> bool:
-    name = "正常接收测试（多DATA）" if multi_data else "正常接收测试（单DATA）"
+    name = "normal receive test (multi DATA)" if multi_data else "normal receive test (single DATA)"
     print(f"\n================ {name} ================")
 
     payload = b"Hello-Keyboard-HID-MULTI-DATA-CHECK"
@@ -212,24 +341,24 @@ def run_normal_flow_test(h: hid.device, observe_sec: float, multi_data: bool) ->
 
     if not send_start_expect_ack(h, len(payload), observe_sec, received_all):
         print_summary(received_all, name)
-        print("  结论：START 阶段失败。")
+        print("  result: START stage failed.")
         return False
 
     seq = 1
     for part in chunks:
         if not send_data_expect_type(h, seq, part, observe_sec, FRAME_TYPE_ACK, received_all):
             print_summary(received_all, name)
-            print(f"  结论：DATA(seq={seq}) 阶段失败。")
+            print(f"  result: DATA(seq={seq}) stage failed.")
             return False
         seq += 1
 
     print_summary(received_all, name)
-    print("  结论：完整接收流程通过。")
+    print("  result: complete receive flow passed.")
     return True
 
 
 def run_bad_crc_flow_test(h: hid.device, observe_sec: float, multi_data: bool) -> bool:
-    name = "错误CRC测试（多DATA）" if multi_data else "错误CRC测试（单DATA）"
+    name = "bad CRC test (multi DATA)" if multi_data else "bad CRC test (single DATA)"
     print(f"\n================ {name} ================")
 
     payload = b"CRC-FAULT-RECOVER-MULTI-DATA-CHECK"
@@ -238,33 +367,33 @@ def run_bad_crc_flow_test(h: hid.device, observe_sec: float, multi_data: bool) -
 
     if not send_start_expect_ack(h, len(payload), observe_sec, received_all):
         print_summary(received_all, name)
-        print("  结论：START 阶段失败。")
+        print("  result: START stage failed.")
         return False
 
     if not send_data_expect_type(h, 1, chunks[0], observe_sec, FRAME_TYPE_NACK, received_all, bad_crc=True):
         print_summary(received_all, name)
-        print("  结论：错 CRC 未得到 NACK。")
+        print("  result: bad CRC did not trigger NACK.")
         return False
     if not send_data_expect_type(h, 1, chunks[0], observe_sec, FRAME_TYPE_ACK, received_all):
         print_summary(received_all, name)
-        print("  结论：错 CRC 后重发恢复失败。")
+        print("  result: resend recovery after bad CRC failed.")
         return False
 
     seq = 2
     for part in chunks[1:]:
         if not send_data_expect_type(h, seq, part, observe_sec, FRAME_TYPE_ACK, received_all):
             print_summary(received_all, name)
-            print(f"  结论：后续 DATA(seq={seq}) 失败。")
+            print(f"  result: follow-up DATA(seq={seq}) failed.")
             return False
         seq += 1
 
     print_summary(received_all, name)
-    print("  结论：容错恢复流程通过。")
+    print("  result: fault-tolerant recovery flow passed.")
     return True
 
 
 def run_session_restart_test(h: hid.device, observe_sec: float, multi_data: bool) -> bool:
-    name = "单一会话管理测试（多DATA）" if multi_data else "单一会话管理测试（单DATA）"
+    name = "single-session management test (multi DATA)" if multi_data else "single-session management test (single DATA)"
     print(f"\n================ {name} ================")
 
     old_payload = b"OLD-SESSION-PAYLOAD-WILL-BE-DROPPED"
@@ -275,7 +404,7 @@ def run_session_restart_test(h: hid.device, observe_sec: float, multi_data: bool
 
     if not send_start_expect_ack(h, len(old_payload), observe_sec, received_all):
         print_summary(received_all, name)
-        print("  结论：旧会话 START 失败。")
+        print("  result: old session START failed.")
         return False
 
     cut = max(1, len(old_chunks) // 2)
@@ -283,32 +412,32 @@ def run_session_restart_test(h: hid.device, observe_sec: float, multi_data: bool
     for part in old_chunks[:cut]:
         if not send_data_expect_type(h, seq, part, observe_sec, FRAME_TYPE_ACK, received_all):
             print_summary(received_all, name)
-            print(f"  结论：旧会话 DATA(seq={seq}) 失败。")
+            print(f"  result: old session DATA(seq={seq}) failed.")
             return False
         seq += 1
 
     if not send_start_expect_ack(h, len(new_payload), observe_sec, received_all):
         print_summary(received_all, name)
-        print("  结论：新会话 START 失败。")
+        print("  result: new session START failed.")
         return False
 
     seq = 1
     for part in new_chunks:
         if not send_data_expect_type(h, seq, part, observe_sec, FRAME_TYPE_ACK, received_all):
             print_summary(received_all, name)
-            print(f"  结论：新会话 DATA(seq={seq}) 失败。")
+            print(f"  result: new session DATA(seq={seq}) failed.")
             return False
         seq += 1
 
     print_summary(received_all, name)
-    print("  结论：单一会话切换管理正常。")
+    print("  result: single-session switching works.")
     return True
 
 
 def run_interrupted_old_data_should_fail_test(h: hid.device, observe_sec: float) -> bool:
-    name = "打断后旧数据续发失败测试"
+    name = "old-data-after-interrupt should fail"
     print(f"\n================ {name} ================")
-    print("流程：旧START->旧半包DATA->新START->新DATA完成->再发旧剩余DATA，期望 ERROR。")
+    print("flow: old START -> old half DATA -> new START -> new DATA complete -> old remaining DATA, expect ERROR")
 
     old_payload = b"OLD-STREAM-SHOULD-BE-INVALID-AFTER-NEW-START"
     new_payload = b"NEW-VALID-SESSION"
@@ -318,38 +447,484 @@ def run_interrupted_old_data_should_fail_test(h: hid.device, observe_sec: float)
 
     if not send_start_expect_ack(h, len(old_payload), observe_sec, received_all):
         print_summary(received_all, name)
-        print("  结论：旧会话 START 失败。")
+        print("  result: old session START failed.")
         return False
     if not send_data_expect_type(h, 1, old_part1, observe_sec, FRAME_TYPE_ACK, received_all):
         print_summary(received_all, name)
-        print("  结论：旧会话首片 DATA 失败。")
+        print("  result: first old-session DATA failed.")
         return False
 
     if not send_start_expect_ack(h, len(new_payload), observe_sec, received_all):
         print_summary(received_all, name)
-        print("  结论：新会话 START 失败。")
+        print("  result: new session START failed.")
         return False
     if not send_data_expect_type(h, 1, new_payload, observe_sec, FRAME_TYPE_ACK, received_all):
         print_summary(received_all, name)
-        print("  结论：新会话 DATA 失败。")
+        print("  result: new session DATA failed.")
         return False
 
     if not send_data_expect_type(h, 2, old_part2, observe_sec, FRAME_TYPE_ERROR, received_all):
         print_summary(received_all, name)
-        print("  结论：旧数据续发未被拒绝（未收到 ERROR）。")
+        print("  result: old data continuation was not rejected (ERROR not received).")
         return False
 
     print_summary(received_all, name)
-    print("  结论：通过（打断后旧数据续发被正确拒绝）。")
+    print("  result: passed (old data continuation correctly rejected after interrupt).")
+    return True
+
+
+def run_get_key_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_GET_KEY test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    received_all: List[Dict[str, int]] = []
+    got_control_ack = False
+    got_reply_start = False
+    got_reply_data = False
+    reply_total_len: Optional[int] = None
+    reply_payload = bytearray()
+    seen_data_seq: set[int] = set()
+
+    req = build_frame(
+        seq=0,
+        frame_type=FRAME_TYPE_START,
+        payload_type=DATA_TYPE_GET_KEY,
+        payload_data=struct.pack("<H", 0),
+    )
+    write_frame(h, req)
+
+    t0 = time.time()
+    end_t = t0 + max(2.0, observe_sec * 3.0)
+
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] \u6536\u5230 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+
+        send_ack_for_peer(h, parsed["seq"])
+
+        payload_len = parsed["payload_len"]
+        payload_type = parsed["payload_type"]
+        payload_data = buf[4 : 4 + payload_len]
+
+        if parsed["type"] == FRAME_TYPE_ACK:
+            got_control_ack = True
+            continue
+
+        if parsed["type"] == FRAME_TYPE_START:
+            if payload_type != DATA_TYPE_GET_KEY:
+                fill_diag(diag, f"reply START payload_type mismatch: {payload_type}", received_all)
+                if verbose:
+                    print(f"  FAIL: reply START payload_type != GET_KEY, actual={payload_type}")
+                    print_summary(received_all, name)
+                return False
+            if payload_len < 2:
+                fill_diag(diag, f"reply START payload_len invalid: {payload_len}", received_all)
+                if verbose:
+                    print(f"  FAIL: reply START payload_len invalid, actual={payload_len}")
+                    print_summary(received_all, name)
+                return False
+
+            reply_total_len = struct.unpack_from("<H", payload_data, 0)[0]
+            got_reply_start = True
+            continue
+
+        if parsed["type"] == FRAME_TYPE_DATA:
+            if payload_type != DATA_TYPE_GET_KEY:
+                fill_diag(diag, f"reply DATA payload_type mismatch: {payload_type}", received_all)
+                if verbose:
+                    print(f"  FAIL: reply DATA payload_type != GET_KEY, actual={payload_type}")
+                    print_summary(received_all, name)
+                return False
+
+            if parsed["seq"] not in seen_data_seq:
+                seen_data_seq.add(parsed["seq"])
+                reply_payload.extend(payload_data)
+            if reply_total_len is not None and len(reply_payload) >= reply_total_len:
+                got_reply_data = True
+                break
+
+    ok = (
+        got_control_ack
+        and got_reply_start
+        and got_reply_data
+        and reply_total_len == GET_KEY_EXPECTED_REPLY_LEN
+        and len(reply_payload) == GET_KEY_EXPECTED_REPLY_LEN
+    )
+
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: GET_KEY reply {len(reply_payload)} bytes: {reply_payload.hex(' ')}")
+        else:
+            print(
+                "  FAIL: "
+                f"ack={got_control_ack}, start={got_reply_start}, data={got_reply_data}, "
+                f"reply_total_len={reply_total_len}, data_len={len(reply_payload)}"
+            )
+    if not ok:
+        fill_diag(
+            diag,
+            "ack/start/data/len check failed: "
+            f"ack={got_control_ack}, start={got_reply_start}, data={got_reply_data}, "
+            f"reply_total_len={reply_total_len}, data_len={len(reply_payload)}",
+            received_all,
+        )
+    return ok
+
+
+def run_zero_len_request_expect_reply(
+    h: hid.device,
+    observe_sec: float,
+    payload_type_req: int,
+    name: str,
+    expected_reply_len: Optional[int] = None,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    received_all: List[Dict[str, int]] = []
+    got_control_ack = False
+    got_reply_start = False
+    got_reply_data = False
+    reply_total_len: Optional[int] = None
+    reply_payload = bytearray()
+    seen_data_seq: set[int] = set()
+
+    req = build_frame(
+        seq=0,
+        frame_type=FRAME_TYPE_START,
+        payload_type=payload_type_req,
+        payload_data=struct.pack("<H", 0),
+    )
+    write_frame(h, req)
+
+    t0 = time.time()
+    end_t = t0 + max(2.0, observe_sec * 4.0)
+
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] \u6536\u5230 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+
+        send_ack_for_peer(h, parsed["seq"])
+
+        payload_len = parsed["payload_len"]
+        payload_type = parsed["payload_type"]
+        payload_data = buf[4 : 4 + payload_len]
+
+        if parsed["type"] == FRAME_TYPE_ACK:
+            got_control_ack = True
+            continue
+
+        if parsed["type"] == FRAME_TYPE_START:
+            if payload_type != payload_type_req:
+                fill_diag(diag, f"reply START payload_type mismatch: {payload_type}", received_all)
+                if verbose:
+                    print(f"  FAIL: reply START payload_type mismatch, actual={payload_type}")
+                    print_summary(received_all, name)
+                return False
+            if payload_len < 2:
+                fill_diag(diag, f"reply START payload_len invalid: {payload_len}", received_all)
+                if verbose:
+                    print(f"  FAIL: reply START payload_len invalid, actual={payload_len}")
+                    print_summary(received_all, name)
+                return False
+            reply_total_len = struct.unpack_from("<H", payload_data, 0)[0]
+            got_reply_start = True
+            if reply_total_len == 0:
+                got_reply_data = True
+                break
+            continue
+
+        if parsed["type"] == FRAME_TYPE_DATA:
+            if payload_type != payload_type_req:
+                fill_diag(diag, f"reply DATA payload_type mismatch: {payload_type}", received_all)
+                if verbose:
+                    print(f"  FAIL: reply DATA payload_type mismatch, actual={payload_type}")
+                    print_summary(received_all, name)
+                return False
+
+            if parsed["seq"] not in seen_data_seq:
+                seen_data_seq.add(parsed["seq"])
+                reply_payload.extend(payload_data)
+            if reply_total_len is not None and len(reply_payload) >= reply_total_len:
+                got_reply_data = True
+                break
+
+    ok = (
+        got_control_ack
+        and got_reply_start
+        and got_reply_data
+        and reply_total_len is not None
+        and len(reply_payload) == reply_total_len
+    )
+    if expected_reply_len is not None:
+        ok = ok and (reply_total_len == expected_reply_len)
+
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: reply_len={reply_total_len}, data_len={len(reply_payload)}")
+        else:
+            print(
+                "  FAIL: "
+                f"ack={got_control_ack}, start={got_reply_start}, data={got_reply_data}, "
+                f"reply_total_len={reply_total_len}, data_len={len(reply_payload)}, "
+                f"expected_reply_len={expected_reply_len}"
+            )
+    if not ok:
+        fill_diag(
+            diag,
+            "ack/start/data/len check failed: "
+            f"ack={got_control_ack}, start={got_reply_start}, data={got_reply_data}, "
+            f"reply_total_len={reply_total_len}, data_len={len(reply_payload)}, "
+            f"expected_reply_len={expected_reply_len}",
+            received_all,
+        )
+    return ok
+
+
+def run_zero_len_request_expect_ack_only(
+    h: hid.device,
+    observe_sec: float,
+    payload_type_req: int,
+    name: str,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    received_all: List[Dict[str, int]] = []
+    got_control_ack = False
+    saw_reply_frame = False
+
+    req = build_frame(
+        seq=0,
+        frame_type=FRAME_TYPE_START,
+        payload_type=payload_type_req,
+        payload_data=struct.pack("<H", 0),
+    )
+    write_frame(h, req)
+
+    t0 = time.time()
+    end_t = t0 + max(1.5, observe_sec * 2.0)
+
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] \u6536\u5230 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+
+        send_ack_for_peer(h, parsed["seq"])
+
+        if parsed["type"] == FRAME_TYPE_ACK:
+            got_control_ack = True
+            continue
+
+        if parsed["type"] in (FRAME_TYPE_START, FRAME_TYPE_DATA):
+            saw_reply_frame = True
+
+    ok = got_control_ack and (not saw_reply_frame)
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print("  PASS: ACK received and no business reply frame.")
+        else:
+            print(f"  FAIL: ack={got_control_ack}, saw_reply_frame={saw_reply_frame}")
+    if not ok:
+        fill_diag(
+            diag,
+            f"ack-only check failed: ack={got_control_ack}, saw_reply_frame={saw_reply_frame}",
+            received_all,
+        )
+    return ok
+
+
+def run_continuous_stress_test(
+    h: hid.device,
+    observe_sec: float,
+    rounds: int,
+    stop_on_fail: bool = False,
+    progress_every: int = 20,
+    flush_ms: int = 80,
+) -> bool:
+    name = f"continuous stress test ({rounds} rounds)"
+    print(f"\n================ {name} ================")
+
+    if rounds <= 0:
+        print("  SKIP: rounds <= 0")
+        return True
+
+    steps: List[Tuple[str, Callable[[Dict[str, object]], bool]]] = [
+        ("GET_KEY", lambda d: run_get_key_test(h, observe_sec, verbose=False, diag=d)),
+        (
+            "GET_LAYER_KEYMAP",
+            lambda d: run_zero_len_request_expect_reply(
+                h,
+                observe_sec,
+                DATA_TYPE_GET_LAYER_KEYMAP,
+                "DATA_TYPE_GET_LAYER_KEYMAP test",
+                expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
+            "GET_ALL_LAYER_KEYMAP",
+            lambda d: run_zero_len_request_expect_reply(
+                h,
+                observe_sec,
+                DATA_TYPE_GET_ALL_LAYER_KEYMAP,
+                "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
+                expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
+            "SET_LAYER",
+            lambda d: run_zero_len_request_expect_ack_only(
+                h,
+                observe_sec,
+                DATA_TYPE_SET_LAYER,
+                "DATA_TYPE_SET_LAYER test",
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
+            "SET_LAYER_KEYMAP",
+            lambda d: run_zero_len_request_expect_ack_only(
+                h,
+                observe_sec,
+                DATA_TYPE_SET_LAYER_KEYMAP,
+                "DATA_TYPE_SET_LAYER_KEYMAP test",
+                verbose=False,
+                diag=d,
+            ),
+        ),
+    ]
+
+    failures: List[Tuple[int, str, str]] = []
+    t0 = time.time()
+    progress_every = max(1, progress_every)
+    flush_ms = max(0, flush_ms)
+    ran = 0
+
+    for idx in range(rounds):
+        ran = idx + 1
+        step_name, fn = steps[idx % len(steps)]
+        diag: Dict[str, object] = {}
+        ok = fn(diag)
+        if not ok:
+            reason = str(diag.get("reason", "unknown"))
+            failures.append((idx + 1, step_name, reason))
+            print(f"  FAIL round={idx + 1}, case={step_name}, reason={reason}")
+            recent = diag.get("recent_frames")
+            if isinstance(recent, list) and recent:
+                print(f"    recent rx: {format_recent_frames(recent)}")
+            if stop_on_fail:
+                print("  stop_on_fail enabled, test terminated early.")
+                break
+        elif (idx + 1) % progress_every == 0:
+            print(f"  progress: {idx + 1}/{rounds} rounds, failures={len(failures)}")
+        flush_in(h, ms=flush_ms)
+
+    elapsed = time.time() - t0
+    passed = ran - len(failures)
+
+    print(f"\n{name} summary:")
+    print(f"  rounds ran: {ran}/{rounds}")
+    print(f"  passed: {passed}, failed: {len(failures)}")
+    print(f"  elapsed: {elapsed:.2f}s")
+    if failures:
+        preview = ", ".join(f"#{r}:{case}" for r, case, _ in failures[:8])
+        if len(failures) > 8:
+            preview += f", ... (+{len(failures) - 8} more)"
+        print(f"  failed rounds: {preview}")
+        return False
     return True
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="键盘固件 HID 通讯完整流程测试（7项）")
-    parser.add_argument("--vid", type=lambda x: int(x, 0), default=0x1A86, help="USB VID（默认：0x1A86）")
-    parser.add_argument("--pid", type=lambda x: int(x, 0), default=0x2004, help="USB PID（默认：0x2004）")
-    parser.add_argument("--path", type=str, default=None, help="通过 HID 路径打开设备")
-    parser.add_argument("--observe-sec", type=float, default=1.2, help="单步等待响应超时（秒）")
+    parser = argparse.ArgumentParser(description="Keyboard firmware HID communication flow tests")
+    parser.add_argument("--vid", type=lambda x: int(x, 0), default=0x1A86, help="USB VID (default: 0x1A86)")
+    parser.add_argument("--pid", type=lambda x: int(x, 0), default=0x2004, help="USB PID (default: 0x2004)")
+    parser.add_argument("--path", type=str, default=None, help="Open device via HID path")
+    parser.add_argument(
+        "--observe-sec",
+        type=float,
+        default=DEFAULT_OBSERVE_SEC,
+        help=f"Per-step response timeout in seconds (default: {DEFAULT_OBSERVE_SEC:.2f})",
+    )
+    parser.add_argument(
+        "--stress-rounds",
+        type=int,
+        default=0,
+        help="Enable continuous stress test with N rounds (default: 0, disabled)",
+    )
+    parser.add_argument(
+        "--stress-stop-on-fail",
+        action="store_true",
+        help="Stop stress test immediately on first failure",
+    )
+    parser.add_argument(
+        "--stress-progress-every",
+        type=int,
+        default=20,
+        help="Print stress progress every N rounds (default: 20)",
+    )
+    parser.add_argument(
+        "--stress-flush-ms",
+        type=int,
+        default=DEFAULT_STRESS_FLUSH_MS,
+        help=f"Inter-round input flush time in ms during stress test (default: {DEFAULT_STRESS_FLUSH_MS})",
+    )
     args = parser.parse_args()
 
     try:
@@ -357,37 +932,90 @@ def main() -> int:
         h.set_nonblocking(0)
         results: List[Tuple[str, bool]] = []
         try:
-            flush_in(h, ms=250)
+            flush_in(h, ms=DEFAULT_START_FLUSH_MS)
             suites = [
-                ("正常接收测试（单DATA）", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
-                ("正常接收测试（多DATA）", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
-                ("错误CRC测试（单DATA）", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
-                ("错误CRC测试（多DATA）", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
-                ("单一会话管理测试（单DATA）", lambda: run_session_restart_test(h, args.observe_sec, multi_data=False)),
-                ("单一会话管理测试（多DATA）", lambda: run_session_restart_test(h, args.observe_sec, multi_data=True)),
-                ("打断后旧数据续发失败测试", lambda: run_interrupted_old_data_should_fail_test(h, args.observe_sec)),
+                # ("normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
+                ("normal receive test (multi DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
+                ("bad CRC test (single DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
+                ("bad CRC test (multi DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
+                ("single-session test (single DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=False)),
+                ("single-session test (multi DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=True)),
+                ("interrupt old-data continuation should fail", lambda: run_interrupted_old_data_should_fail_test(h, args.observe_sec)),
+                ("DATA_TYPE_GET_KEY test", lambda: run_get_key_test(h, args.observe_sec)),
+                (
+                    "DATA_TYPE_GET_LAYER_KEYMAP test",
+                    lambda: run_zero_len_request_expect_reply(
+                        h,
+                        args.observe_sec,
+                        DATA_TYPE_GET_LAYER_KEYMAP,
+                        "DATA_TYPE_GET_LAYER_KEYMAP test",
+                        expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+                    ),
+                ),
+                (
+                    "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
+                    lambda: run_zero_len_request_expect_reply(
+                        h,
+                        args.observe_sec,
+                        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
+                        "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
+                        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+                    ),
+                ),
+                (
+                    "DATA_TYPE_SET_LAYER test",
+                    lambda: run_zero_len_request_expect_ack_only(
+                        h,
+                        args.observe_sec,
+                        DATA_TYPE_SET_LAYER,
+                        "DATA_TYPE_SET_LAYER test",
+                    ),
+                ),
+                (
+                    "DATA_TYPE_SET_LAYER_KEYMAP test",
+                    lambda: run_zero_len_request_expect_ack_only(
+                        h,
+                        args.observe_sec,
+                        DATA_TYPE_SET_LAYER_KEYMAP,
+                        "DATA_TYPE_SET_LAYER_KEYMAP test",
+                    ),
+                ),
             ]
+            if args.stress_rounds > 0:
+                suites.append(
+                    (
+                        f"continuous stress test ({args.stress_rounds} rounds)",
+                        lambda: run_continuous_stress_test(
+                            h,
+                            args.observe_sec,
+                            rounds=args.stress_rounds,
+                            stop_on_fail=args.stress_stop_on_fail,
+                            progress_every=args.stress_progress_every,
+                            flush_ms=args.stress_flush_ms,
+                        ),
+                    )
+                )
 
             for name, fn in suites:
                 ok = fn()
                 results.append((name, ok))
-                flush_in(h, ms=120)
+                flush_in(h, ms=DEFAULT_CASE_FLUSH_MS)
         finally:
             h.close()
 
         total = len(results)
         passed = sum(1 for _, ok in results if ok)
         failed = total - passed
-        print("\n================ 最终测试总结 ================")
+        print("\n================ Final Test Summary ================")
         for name, ok in results:
-            print(f"  {name}: {'通过' if ok else '失败'}")
-        print(f"  总计: {total} 项，通过: {passed} 项，失败: {failed} 项")
+            print(f"  {name}: {'PASS' if ok else 'FAIL'}")
+        print(f"  Total: {total}, Passed: {passed}, Failed: {failed}")
         return 0 if failed == 0 else 2
 
     except KeyboardInterrupt:
         return 130
     except Exception as e:
-        print(f"错误：{e}", file=sys.stderr)
+        print(f"Error: {e}", file=sys.stderr)
         return 1
 
 

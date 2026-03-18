@@ -27,8 +27,6 @@ RAM int main(void)
     PRINT("SystemClk:%lu\r\n", SystemCoreClock);
 #endif
     app_init();
-    printf("%d\n", sizeof(SEND_STATUS));
-
     // ReSharper disable once CppDFAEndlessLoop
     while (1)
     {

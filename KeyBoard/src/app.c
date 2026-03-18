@@ -21,6 +21,8 @@ volatile uint8_t scan_timeout_ticks = 0;
 volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
+
 void app_init(void)
 {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
@@ -82,7 +84,7 @@ void app_init(void)
         RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
 
         TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
-        TIM_TimeBaseInitStructure.TIM_Period = 4999;
+        TIM_TimeBaseInitStructure.TIM_Period = 2999;
         TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
@@ -103,6 +105,7 @@ void app_init(void)
     Set_USB_Clock();
     USB_Init();
     USB_Interrupts_Config();
+    comm_register_rx_callback(app_comm_rx_callback);
     PRINT("App Init OK!\r\n");
 }
 
@@ -210,5 +213,50 @@ RAM INTF void TIM4_IRQHandler(void)
     {
         time5ms_tick = 1;
         TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+    }
+}
+
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len)
+{
+    (void)payload;
+    (void)payload_len;
+
+    switch (payload_type)
+    {
+    case DATA_TYPE_GET_KEY:
+        {
+            comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
+            break;
+        }
+    case DATA_TYPE_GET_LAYER_KEYMAP:
+        {
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            /* 发送当前运行时已加载的一层（位于 keymap_active） */
+            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)keymap_active, layer_size);
+            break;
+        }
+    case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
+        {
+            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+            //NOLINTNEXTLINE(*-reserved-identifier)
+            extern uint8_t _keymap_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            const uint8_t* flash_base = &_keymap_lma[0];
+            uintptr_t p = (uintptr_t)flash_base + 1u; /* 跳过首字节的 image header */
+            p = p + 3u & ~3u; /* 向上对齐到 4 字节边界 */
+            const uint8_t* layers_src = (const uint8_t*)p;
+            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
+            break;
+        }
+    case DATA_TYPE_SET_LAYER:
+        {
+            break;
+        }
+    case DATA_TYPE_SET_LAYER_KEYMAP:
+        {
+            break;
+        }
+    default:
+        break;
     }
 }
