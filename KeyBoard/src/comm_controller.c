@@ -22,10 +22,49 @@ static void release_receive_payload_buffer(void)
     if (receive_handle.payload_buf != NULL)
     {
         free(receive_handle.payload_buf);
-        receive_handle.payload_buf = NULL;
     }
-    receive_handle.expected_payload_len = 0;
-    receive_handle.received_payload_len = 0;
+    memset(&receive_handle, 0, sizeof(receive_handle));
+}
+
+static void print_received_payload_content(const uint8_t *buf, uint16_t len)
+{
+    const uint16_t show_len = (len > 128u) ? 128u : len;
+    uint16_t i = 0;
+
+    PRINT("Received complete payload, len=%u bytes.\r\n", len);
+    PRINT("Payload HEX (%u bytes): ", show_len);
+    for (i = 0; i < show_len; i++)
+    {
+        PRINT("%02X", buf[i]);
+        if (i + 1u < show_len)
+        {
+            PRINT(" ");
+        }
+    }
+    if (show_len < len)
+    {
+        PRINT(" ...");
+    }
+    PRINT("\r\n");
+
+    PRINT("Payload ASCII (%u bytes): ", show_len);
+    for (i = 0; i < show_len; i++)
+    {
+        const uint8_t c = buf[i];
+        if (c >= 32u && c <= 126u)
+        {
+            PRINT("%c", (char)c);
+        }
+        else
+        {
+            PRINT(".");
+        }
+    }
+    if (show_len < len)
+    {
+        PRINT("...");
+    }
+    PRINT("\r\n");
 }
 
 void load_no_payload_flag(const FRAME_TYPE type)
@@ -35,7 +74,7 @@ void load_no_payload_flag(const FRAME_TYPE type)
      * If we are waiting ACK for our own outgoing frame, any immediate
      * ACK/NACK/ERROR response to peer traffic should preempt that old tx.
      */
-    if (send_handle.status == SEND_STATUS_WAIT_RESPONSE)
+    if (send_handle.status == SEND_STATUS_WAIT_RESPONSE || send_handle.status == SEND_STATUS_RETRY)
     {
         memset(&send_handle, 0, sizeof(send_handle));
     }
@@ -118,6 +157,7 @@ void comm_recv_process()
                 receive_handle.expected_payload_len = payload_all_len;
                 receive_handle.received_payload_len = 0;
                 receive_handle.last_sqe_num = 0;
+                receive_handle.need_ack = payload_all_len > 0 ? 1 : 0;
                 load_no_payload_flag(FRAME_TYPE_ACK);
             }
             else
@@ -147,6 +187,7 @@ void comm_recv_process()
 
                 if (receive_handle.payload_buf == NULL)
                 {
+                    release_receive_payload_buffer();
                     load_no_payload_flag(FRAME_TYPE_ERROR);
                     break;
                 }
@@ -155,10 +196,13 @@ void comm_recv_process()
 
                 receive_handle.received_payload_len += frame_payload_len;
                 receive_handle.last_sqe_num++;
+                receive_handle.need_ack =
+                    receive_handle.received_payload_len < receive_handle.expected_payload_len ? 1 : 0;
                 load_no_payload_flag(FRAME_TYPE_ACK);
                 if (receive_handle.received_payload_len == receive_handle.expected_payload_len)
                 {
-                    // TODO
+                    print_received_payload_content(receive_handle.payload_buf, receive_handle.received_payload_len);
+                    // TODO: Process the complete payload
                 }
             }
             else
