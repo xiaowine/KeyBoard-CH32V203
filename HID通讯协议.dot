@@ -1,0 +1,113 @@
+﻿digraph HID_Comm_Protocol {
+  rankdir=LR;
+  splines=polyline;
+  nodesep=0.55;
+  ranksep=0.85;
+  fontname="Microsoft YaHei";
+  labelloc="t";
+  label="HID 通讯协议流程（基于 comm_controller.c / 2026-03-19）";
+
+  node [
+    shape=box,
+    style="rounded",
+    fontname="Microsoft YaHei",
+    width=2.3,
+    height=0.62
+  ];
+
+  edge [
+    fontname="Microsoft YaHei",
+    arrowsize=0.8
+  ];
+
+  subgraph cluster_send {
+    label="发送侧（TX）";
+    color="#888888";
+    style="rounded";
+
+    SEND_IDLE [label="SEND_IDLE\n空闲，等待可发帧"];
+    SEND_PREPARE [label="prepare_next_frame\n优先级：控制帧 > 回复START > 回复DATA"];
+    SEND_TX [label="comm_send\n发送当前帧"];
+    SEND_WAIT [label="SEND_WAIT_RESPONSE\n等待匹配 ACK/NACK"];
+    SEND_ACK_OK [label="handle_send_ack\n按 source 推进会话/队列"];
+    SEND_RETRY [label="SEND_RETRY\n原帧重发，retry_count++"];
+    SEND_OVERFLOW [label="重试超限\nqueue ERROR 控制帧"];
+
+    SEND_IDLE -> SEND_PREPARE [label="有可发内容\n(control pending 或 reply active)"];
+    SEND_PREPARE -> SEND_TX [label="装配成功"];
+    SEND_PREPARE -> SEND_IDLE [label="无可发帧"];
+    SEND_TX -> SEND_WAIT;
+
+    SEND_WAIT -> SEND_ACK_OK [label="收到 ACK\n且 seq 匹配当前在途帧"];
+    SEND_WAIT -> SEND_RETRY [label="收到 NACK\n且 seq 匹配当前在途帧"];
+    SEND_WAIT -> SEND_RETRY [label="超时（本周期无有效响应）"];
+    SEND_WAIT -> SEND_WAIT [label="ACK/NACK 不匹配\n(非 WAIT_RESPONSE 或 seq 不匹配)\n忽略"];
+
+    SEND_ACK_OK -> SEND_IDLE [label="reset_send_state\n下一周期再调度"];
+
+    SEND_RETRY -> SEND_TX [label="retry_count <= RETRY_MAX_CNT"];
+    SEND_RETRY -> SEND_OVERFLOW [label="retry_count > RETRY_MAX_CNT"];
+    SEND_OVERFLOW -> SEND_IDLE [label="等待下一周期发送 ERROR 控制帧"];
+  }
+
+  subgraph cluster_receive {
+    label="接收侧（RX）";
+    color="#888888";
+    style="rounded";
+
+    RX_IDLE [label="RX 周期入口"];
+    RX_FRAME [label="读取 64B 帧\nUSBD_CustomDataCnt == 64"];
+    RX_VERIFY [label="基础校验\nseq 范围 + CRC"];
+
+    RX_START [label="处理 START\n仅接受 seq=0"];
+    RX_DATA [label="处理 DATA\n校验顺序/长度/type/边界"];
+    RX_ACKNACK [label="处理 ACK/NACK\n仅置位发送侧标志"];
+
+    RX_Q_ACK [label="queue_control_frame(ACK)"];
+    RX_Q_NACK [label="queue_control_frame(NACK)"];
+    RX_Q_ERR [label="queue_control_frame(ERROR)"];
+
+    RX_COMPLETE [label="接收完成\n回调上层并释放接收缓存"];
+    RX_TICK [label="未收到完整帧\nneed_ack 时 retry_count++"];
+    RX_RESET [label="接收重试超限\n释放接收状态"];
+
+    RX_IDLE -> RX_FRAME [label="有完整帧"];
+    RX_IDLE -> RX_TICK [label="无完整帧"];
+
+    RX_FRAME -> RX_VERIFY;
+    RX_VERIFY -> RX_Q_ERR [label="seq 超范围"];
+    RX_VERIFY -> RX_Q_NACK [label="CRC 失败"];
+    RX_VERIFY -> RX_START [label="type=START"];
+    RX_VERIFY -> RX_DATA [label="type=DATA"];
+    RX_VERIFY -> RX_ACKNACK [label="type=ACK/NACK"];
+    RX_VERIFY -> RX_IDLE [label="type=ERROR/未知\n按规则处理后返回"];
+
+    RX_START -> RX_Q_ERR [label="非法 START 或资源不足"];
+    RX_START -> RX_Q_ACK [label="合法 START\n初始化会话（并抢占旧回复会话）"];
+    RX_START -> RX_COMPLETE [label="合法且总长=0"];
+
+    RX_DATA -> RX_Q_ERR [label="任一校验失败"];
+    RX_DATA -> RX_Q_ACK [label="分片合法"];
+    RX_DATA -> RX_COMPLETE [label="收齐全部 payload"];
+
+    RX_ACKNACK -> RX_IDLE [label="匹配置位；不匹配忽略"];
+
+    RX_Q_ACK -> RX_IDLE;
+    RX_Q_NACK -> RX_IDLE;
+    RX_Q_ERR -> RX_IDLE;
+
+    RX_TICK -> RX_RESET [label="retry_count > RETRY_MAX_CNT"];
+    RX_TICK -> RX_IDLE [label="未超限"];
+    RX_RESET -> RX_IDLE;
+  }
+
+  subgraph cluster_rules {
+    label="关键约束";
+    color="#BBBBBB";
+    style="rounded,dashed";
+
+    RULE1 [label="ACK/NACK 匹配规则\n仅在 SEND_WAIT_RESPONSE 且 seq 相等时有效"];
+    RULE2 [label="单会话策略\n新 START / 控制帧可抢占旧业务回复会话"];
+    RULE3 [label="控制帧优先级最高\nACK/NACK/ERROR 优先于业务回复"];
+  }
+}

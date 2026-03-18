@@ -409,12 +409,20 @@ static void comm_recv_process(void)
                     break;
                 }
                 case FRAME_TYPE_ACK:
-                    /* 仅置位标志，发送状态机在 comm_send_process 中消费。 */
-                    send_handle.receive_ack = 1;
+                    /* 仅在 WAIT_RESPONSE 且 seq 匹配当前待确认帧时接受 ACK。 */
+                    if (send_handle.status == SEND_STATUS_WAIT_RESPONSE &&
+                        frame_data.seq_num == send_handle.frame_data.seq_num)
+                    {
+                        send_handle.receive_ack = 1;
+                    }
                     break;
                 case FRAME_TYPE_NACK:
-                    /* 仅置位标志，发送状态机在 comm_send_process 中消费。 */
-                    send_handle.receive_nack = 1;
+                    /* 仅在 WAIT_RESPONSE 且 seq 匹配当前待确认帧时接受 NACK。 */
+                    if (send_handle.status == SEND_STATUS_WAIT_RESPONSE &&
+                        frame_data.seq_num == send_handle.frame_data.seq_num)
+                    {
+                        send_handle.receive_nack = 1;
+                    }
                     break;
                 case FRAME_TYPE_ERROR:
                     /* 对端报告错误时，重置本地接收会话。 */
