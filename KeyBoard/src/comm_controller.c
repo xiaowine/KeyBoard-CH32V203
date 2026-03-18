@@ -30,6 +30,16 @@ static void release_receive_payload_buffer(void)
 
 void load_no_payload_flag(const FRAME_TYPE type)
 {
+    /*
+     * Single-session policy:
+     * If we are waiting ACK for our own outgoing frame, any immediate
+     * ACK/NACK/ERROR response to peer traffic should preempt that old tx.
+     */
+    if (send_handle.status == SEND_STATUS_WAIT_RESPONSE)
+    {
+        memset(&send_handle, 0, sizeof(send_handle));
+    }
+
     memset(&send_handle.frame_data, 0, sizeof(send_handle.frame_data));
     send_handle.frame_data = (FrameData){
         .type = type,
@@ -80,6 +90,7 @@ void comm_recv_process()
         }
 
         receive_handle.retry_count = 0;
+
         switch (frame_data.type)
         {
         case FRAME_TYPE_START:
