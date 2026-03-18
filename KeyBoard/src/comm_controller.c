@@ -194,72 +194,99 @@ void comm_send_process()
         send_handle.status = SEND_STATUS_FRAME;
     }
 
-    switch (send_handle.status)
+    uint8_t need_reenter = 1;
+    uint8_t has_sent = 0;
+    while (need_reenter && !has_sent)
     {
-    case SEND_STATUS_FRAME:
-    {
-        send_handle.last_status = SEND_STATUS_FRAME;
-        comm_send(send_handle.frame_data);
-        send_handle.send_pending = 0;
-        send_handle.status = SEND_STATUS_WAIT_RESPONSE;
-        break;
-    }
-    case SEND_STATUS_WAIT_RESPONSE:
-    {
-        if (send_handle.receive_ack)
+        need_reenter = 0;
+        switch (send_handle.status)
         {
-            send_handle.receive_ack = 0;
-            switch (send_handle.last_status)
-            {
-            case SEND_STATUS_FRAME:
-            {
-                // TODO 是否发送完，没发送完继续发送下一帧然后等待响应
-                // TODO 发送完了就直接置空闲状态
-                send_handle.status = SEND_STATUS_IDLE;
-                break;
-            }
-            case SEND_STATUS_RETRY:
-            {
-                send_handle.retry_count = 0;
-                send_handle.status = SEND_STATUS_IDLE;
-                // TODO 重发完成，是否发送完，没发送完跳回SEND_STATUS_FRAME
-                // TODO 发送完了就直接置空闲状态
-                break;
-            }
-            default:
-                send_handle.status = SEND_STATUS_IDLE;
-                break;
-            }
-        }
-        else
+        case SEND_STATUS_FRAME:
         {
-            send_handle.retry_count++;
-            send_handle.status = SEND_STATUS_RETRY;
-        }
-
-        if (send_handle.retry_count > RETRY_MAX_CNT)
-        {
-            memset(&send_handle.frame_data, 0, sizeof(send_handle.frame_data));
-            send_handle.frame_data = (FrameData){
-                .type = FRAME_TYPE_ERROR,
-                .payload_length = 0,
-            };
+            send_handle.last_status = SEND_STATUS_FRAME;
             comm_send(send_handle.frame_data);
-            PRINT("Send data retry count exceeded, resetting state.\r\n");
-            send_handle.status = SEND_STATUS_IDLE;
+            has_sent = 1;
+            send_handle.send_pending = 0;
+            send_handle.status = SEND_STATUS_WAIT_RESPONSE;
+            break;
         }
-        break;
-    }
-    case SEND_STATUS_RETRY:
-    {
-        send_handle.last_status = SEND_STATUS_RETRY;
-        comm_send(send_handle.frame_data);
-        send_handle.status = SEND_STATUS_WAIT_RESPONSE;
-        break;
-    }
-    default:
-    {
-        break;
-    }
+        case SEND_STATUS_WAIT_RESPONSE:
+        {
+            if (send_handle.receive_ack)
+            {
+                send_handle.receive_ack = 0;
+                switch (send_handle.last_status)
+                {
+                case SEND_STATUS_FRAME:
+                {
+                    send_handle.retry_count = 0;
+                    if (send_handle.send_pending)
+                    {
+                        send_handle.status = SEND_STATUS_FRAME;
+                        // On ACK, immediately send next pending frame in this same tick.
+                        need_reenter = 1;
+                    }
+                    else
+                    {
+                        send_handle.status = SEND_STATUS_IDLE;
+                    }
+                    break;
+                }
+                case SEND_STATUS_RETRY:
+                {
+                    send_handle.retry_count = 0;
+                    if (send_handle.send_pending)
+                    {
+                        send_handle.status = SEND_STATUS_FRAME;
+                        // Retry succeeded and another frame is pending: send it now.
+                        need_reenter = 1;
+                    }
+                    else
+                    {
+                        send_handle.status = SEND_STATUS_IDLE;
+                    }
+                    break;
+                }
+                default:
+                    send_handle.status = SEND_STATUS_IDLE;
+                    break;
+                }
+            }
+            else
+            {
+                send_handle.retry_count++;
+                send_handle.status = SEND_STATUS_RETRY;
+            }
+
+            if (send_handle.retry_count > RETRY_MAX_CNT)
+            {
+                memset(&send_handle.frame_data, 0, sizeof(send_handle.frame_data));
+                send_handle.frame_data = (FrameData){
+                    .type = FRAME_TYPE_ERROR,
+                    .payload_length = 0,
+                };
+                if (!has_sent)
+                {
+                    comm_send(send_handle.frame_data);
+                    has_sent = 1;
+                }
+                PRINT("Send data retry count exceeded, resetting state.\r\n");
+                send_handle.status = SEND_STATUS_IDLE;
+            }
+            break;
+        }
+        case SEND_STATUS_RETRY:
+        {
+            send_handle.last_status = SEND_STATUS_RETRY;
+            comm_send(send_handle.frame_data);
+            has_sent = 1;
+            send_handle.status = SEND_STATUS_WAIT_RESPONSE;
+            break;
+        }
+        default:
+        {
+            break;
+        }
+        }
     }
 }

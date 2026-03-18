@@ -1,4 +1,4 @@
-﻿#ifndef COMM_CONTROLLER_H
+#ifndef COMM_CONTROLLER_H
 #define COMM_CONTROLLER_H
 
 #include <stdint.h>
