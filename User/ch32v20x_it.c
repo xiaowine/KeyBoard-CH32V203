@@ -38,7 +38,7 @@ void NMI_Handler(void)
 void HardFault_Handler(void)
 {
   PRINT("!!!!!!Hard Fault detected!!!!!!!\r\n");
-  // NVIC_SystemReset();
+  NVIC_SystemReset();
   while (1)
   {
   }

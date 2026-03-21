@@ -558,6 +558,11 @@ static void handle_send_ack(void)
 /** @brief 发送方向重试溢出处理：终止回复并回 ERROR。 */
 static void handle_send_retry_overflow(void)
 {
+    if (send_handle.source == TX_SOURCE_CONTROL && send_handle.frame_data.type == FRAME_TYPE_ERROR)
+    {
+        reset_send_state();
+        return;
+    }
     if (send_handle.source == TX_SOURCE_REPLY_START || send_handle.source == TX_SOURCE_REPLY_DATA)
     {
         /* 业务回复方向失败时清空会话，避免继续发送陈旧数据。 */
