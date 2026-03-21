@@ -42,8 +42,6 @@ static void dispatch_received_payload(uint8_t payload_type, const uint8_t *paylo
 static ReceiveHandle receive_handle = {0};
 /** @brief 发送会话上下文。 */
 static SendHandle send_handle = {0};
-/** @brief 控制帧单槽队列。 */
-static ControlQueue control_queue = {0};
 /** @brief 业务回复会话上下文。 */
 static ReplySession reply_session = {0};
 /** @brief 上层接收回调。 */
@@ -159,14 +157,20 @@ static void print_received_payload_content(const uint8_t *buf, uint16_t len)
 /** @brief 入队控制帧并触发发送抢占。 */
 static void queue_control_frame(const FRAME_TYPE type)
 {
+    FrameData control_frame = {0};
+
     /*
      * 单会话策略：
      * 对端触发的 ACK/NACK/ERROR 属于控制帧，必须抢占当前业务发送状态，
      * 并在下一次调度中优先发送。
      */
     reset_send_state();
-    control_queue.type = type;
-    control_queue.pending = 1;
+    control_frame.type = (uint8_t)type;
+    control_frame.payload_length = 0u;
+    send_handle.frame_data = control_frame;
+    send_handle.source = TX_SOURCE_CONTROL;
+    send_handle.last_status = SEND_STATUS_FRAME;
+    send_handle.status = SEND_STATUS_FRAME;
 }
 
 /** @brief 发送一帧数据：补齐 CRC 后通过 USB 端点发出。 */
@@ -345,6 +349,7 @@ static void comm_recv_process(void)
                 case FRAME_TYPE_DATA:
                 {
                     const uint16_t frame_payload_len = frame_data.payload_length;
+                    uint8_t is_complete = 0u;
 
                     /* DATA 必须严格按顺序到达且需要存在活动接收会话。 */
                     if (frame_data.seq_num != (uint8_t)(receive_handle.last_seq_num + 1u) ||
@@ -394,11 +399,15 @@ static void comm_recv_process(void)
                     receive_handle.last_seq_num++;
                     receive_handle.need_ack =
                         receive_handle.received_payload_len < receive_handle.expected_payload_len ? 1u : 0u;
+                    is_complete = receive_handle.received_payload_len == receive_handle.expected_payload_len ? 1u : 0u;
 
-                    /* 先入队 ACK，再在组包完成后回调业务。 */
-                    queue_control_frame(FRAME_TYPE_ACK);
+                    /* 末片查询请求不回 ACK，直接进入回复 START。 */
+                    if (!(is_complete && DATA_TYPE_IS_QUERY(receive_handle.payload_type)))
+                    {
+                        queue_control_frame(FRAME_TYPE_ACK);
+                    }
 
-                    if (receive_handle.received_payload_len == receive_handle.expected_payload_len)
+                    if (is_complete)
                     {
                         /* 会话完成：打印内容、回调上层、释放缓存。 */
                         print_received_payload_content(receive_handle.payload_buf, receive_handle.received_payload_len);
@@ -465,14 +474,6 @@ static uint8_t prepare_next_frame(FrameData *out_frame, TX_SOURCE *out_source)
     memset(out_frame, 0, sizeof(*out_frame));
     *out_source = TX_SOURCE_NONE;
 
-    if (control_queue.pending)
-    {
-        out_frame->type = (uint8_t)control_queue.type;
-        out_frame->payload_length = 0;
-        *out_source = TX_SOURCE_CONTROL;
-        return 1;
-    }
-
     if (!reply_session.active)
     {
         /* 无待发业务回复。 */
@@ -524,8 +525,6 @@ static void handle_send_ack(void)
     switch (send_handle.source)
     {
     case TX_SOURCE_CONTROL:
-        /* 控制帧被确认后清空控制槽位。 */
-        control_queue.pending = 0;
         break;
     case TX_SOURCE_REPLY_START:
         if (reply_session.payload_len == 0u)
@@ -579,6 +578,13 @@ static void handle_send_retry_overflow(void)
  */
 static void comm_send_process(void)
 {
+    if (send_handle.status == SEND_STATUS_FRAME)
+    {
+        comm_send(send_handle.frame_data);
+        send_handle.status = SEND_STATUS_WAIT_RESPONSE;
+        return;
+    }
+
     if (send_handle.status == SEND_STATUS_WAIT_RESPONSE)
     {
         if (send_handle.receive_ack)

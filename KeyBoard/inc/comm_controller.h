@@ -30,6 +30,9 @@
 /** @brief 协议允许的最大序号值（seq_num）。 */
 #define SEQ_MAX_NUM 100u
 
+/** @brief 判断 DATA_TYPE 是否为查询类。 */
+#define DATA_TYPE_IS_QUERY(type) ((((uint8_t)(type)) & 0b0001) == 0u)
+
 /** @brief 帧类型定义。 */
 typedef enum
 {
@@ -49,15 +52,15 @@ typedef enum
 typedef enum
 {
     /** 读取按键快照。 */
-    DATA_TYPE_GET_KEY = 0u,
+    DATA_TYPE_GET_KEY = 0b0000,
     /** 读取当前层按键映射。 */
-    DATA_TYPE_GET_LAYER_KEYMAP = 1u,
+    DATA_TYPE_GET_LAYER_KEYMAP = 0b0010,
     /** 读取全部层按键映射。 */
-    DATA_TYPE_GET_ALL_LAYER_KEYMAP = 2u,
+    DATA_TYPE_GET_ALL_LAYER_KEYMAP = 0b0100,
     /** 设置当前层（预留）。 */
-    DATA_TYPE_SET_LAYER = 3u,
+    DATA_TYPE_SET_LAYER = 0b0001,
     /** 设置层映射（预留）。 */
-    DATA_TYPE_SET_LAYER_KEYMAP = 4u,
+    DATA_TYPE_SET_LAYER_KEYMAP = 0b0011,
 } DATA_TYPE;
 
 /** @brief 发送状态机状态定义。 */
@@ -142,7 +145,7 @@ typedef struct
     /** 已累计接收的字节数。 */
     uint16_t received_payload_len;
     /** 接收缓存指针，长度为 expected_payload_len。 */
-    uint8_t* payload_buf;
+    uint8_t *payload_buf;
 } ReceiveHandle;
 
 /** @brief 发送方向上下文。 */
@@ -164,15 +167,6 @@ typedef struct
     TX_SOURCE source;
 } SendHandle;
 
-/** @brief 控制帧队列（单槽位）。 */
-typedef struct
-{
-    /** 1 表示有待发送控制帧。 */
-    uint8_t pending;
-    /** 待发送控制帧类型。 */
-    FRAME_TYPE type;
-} ControlQueue;
-
 /** @brief 业务回复会话上下文。 */
 typedef struct
 {
@@ -189,9 +183,8 @@ typedef struct
     /** 已被 ACK 的字节数。 */
     uint16_t acked_payload_len;
     /** 回复缓存指针，长度为 payload_len。 */
-    uint8_t* payload_buf;
+    uint8_t *payload_buf;
 } ReplySession;
-
 
 /**
  * @brief 接收业务载荷后的回调函数类型。
@@ -200,7 +193,7 @@ typedef struct
  * @param payload      业务数据指针；当 payload_len 为 0 时可能为 NULL。
  * @param payload_len  业务数据长度。
  */
-typedef void (*comm_rx_callback_t)(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
+typedef void (*comm_rx_callback_t)(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
 
 /** @brief 驱动通信控制器一次收发调度（建议周期调用）。 */
 void comm_controller_process(void);
@@ -213,6 +206,6 @@ void comm_register_rx_callback(comm_rx_callback_t callback);
  *
  * 若已有待发/在发业务回复，本函数会按单会话策略覆盖旧回复。
  */
-void comm_queue_reply(uint8_t payload_type, const uint8_t* data, uint16_t len);
+void comm_queue_reply(uint8_t payload_type, const uint8_t *data, uint16_t len);
 
 #endif

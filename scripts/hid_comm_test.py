@@ -30,8 +30,8 @@ FLUSH_READ_TIMEOUT_MS = _scale_ms(20, 6)
 DEFAULT_OBSERVE_SEC = max(0.6, 1.2 * _TIME_SCALE)
 DEFAULT_START_FLUSH_MS = _scale_ms(250, 80)
 DEFAULT_CASE_FLUSH_MS = _scale_ms(120, 40)
-DEFAULT_STRESS_FLUSH_MS = _scale_ms(80, 24)
 DEFAULT_STEP_FLUSH_MS = _scale_ms(40, 12)
+STRESS_QUERY_REQUEST_LEN = MAX_DATA_PAYLOAD + 24
 
 _TYPE_DEFAULTS = {
     "FRAME_TYPE_ERROR": 0,
@@ -40,11 +40,33 @@ _TYPE_DEFAULTS = {
     "FRAME_TYPE_ACK": 3,
     "FRAME_TYPE_NACK": 4,
     "DATA_TYPE_GET_KEY": 0,
-    "DATA_TYPE_GET_LAYER_KEYMAP": 1,
-    "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 2,
-    "DATA_TYPE_SET_LAYER": 3,
-    "DATA_TYPE_SET_LAYER_KEYMAP": 4,
+    "DATA_TYPE_SET_LAYER": 1,
+    "DATA_TYPE_GET_LAYER_KEYMAP": 2,
+    "DATA_TYPE_SET_LAYER_KEYMAP": 3,
+    "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 4,
 }
+
+
+def _parse_c_int_literal(literal: str) -> Optional[int]:
+    s = literal.strip()
+    if not s:
+        return None
+
+    # Strip common C integer suffixes: U/L/UL/ULL/LU...
+    s = re.sub(r"[uUlL]+$", "", s)
+    if not s:
+        return None
+
+    try:
+        if s.startswith(("0b", "0B")):
+            return int(s[2:], 2)
+        if s.startswith(("0x", "0X")):
+            return int(s[2:], 16)
+        if len(s) > 1 and s.startswith("0") and re.fullmatch(r"0[0-7]+", s):
+            return int(s, 8)
+        return int(s, 10)
+    except ValueError:
+        return None
 
 
 def load_type_values_from_header() -> Dict[str, int]:
@@ -55,9 +77,11 @@ def load_type_values_from_header() -> Dict[str, int]:
     except OSError:
         return values
 
-    for name, value in re.findall(r"\b((?:FRAME|DATA)_TYPE_[A-Z0-9_]+)\s*=\s*(\d+)u?\b", text):
+    for name, literal in re.findall(r"\b((?:FRAME|DATA)_TYPE_[A-Z0-9_]+)\s*=\s*([0-9A-Za-z]+)", text):
         if name in values:
-            values[name] = int(value)
+            parsed = _parse_c_int_literal(literal)
+            if parsed is not None:
+                values[name] = parsed
     return values
 
 
@@ -271,6 +295,7 @@ def wait_response_and_auto_ack(
     h: hid.device,
     timeout_sec: float,
     expect_types: Tuple[int, ...] = (FRAME_TYPE_ACK, FRAME_TYPE_NACK, FRAME_TYPE_ERROR),
+    verbose: bool = True,
 ) -> Tuple[Optional[Dict[str, int]], List[Dict[str, int]]]:
     t0 = time.time()
     end_t = t0 + timeout_sec
@@ -285,10 +310,11 @@ def wait_response_and_auto_ack(
             continue
         parsed["t_ms"] = int((time.time() - t0) * 1000)
         rx_all.append(parsed)
-        print(
-            f"[{parsed['t_ms']:>4} ms] \u6536\u5230 type={type_name(parsed['type'])}, "
-            f"seq={parsed['seq']}, payload_len={parsed['payload_len']}"
-        )
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] \u6536\u5230 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}"
+            )
         send_ack_for_peer(h, parsed["seq"])
         if parsed["type"] in expect_types:
             return parsed, rx_all
@@ -803,10 +829,16 @@ def run_zero_len_request_expect_ack_only(
 
         if parsed["type"] == FRAME_TYPE_ACK:
             got_control_ack = True
+            # Fast path: pass condition reached, no need to wait until timeout.
+            if not saw_reply_frame:
+                break
             continue
 
         if parsed["type"] in (FRAME_TYPE_START, FRAME_TYPE_DATA):
             saw_reply_frame = True
+            # Already violates ack-only contract, no need to keep waiting.
+            if got_control_ack:
+                break
 
     ok = got_control_ack and (not saw_reply_frame)
     if verbose:
@@ -824,13 +856,253 @@ def run_zero_len_request_expect_ack_only(
     return ok
 
 
+def _build_stress_query_request_payload(payload_type: int, length: int = STRESS_QUERY_REQUEST_LEN) -> bytes:
+    if length <= 0:
+        return b""
+    # Deterministic pattern: easier to debug across host/firmware logs.
+    return bytes(((payload_type + i) & 0xFF) for i in range(length))
+
+
+def run_chunked_query_request_expect_reply(
+    h: hid.device,
+    observe_sec: float,
+    payload_type_req: int,
+    name: str,
+    expected_reply_len: Optional[int] = None,
+    request_payload: bytes = b"",
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    received_all: List[Dict[str, int]] = []
+    got_start_ack = False
+    got_reply_start = False
+    got_reply_data = False
+    reply_total_len: Optional[int] = None
+    reply_payload = bytearray()
+    seen_data_seq: set[int] = set()
+
+    req_len = len(request_payload)
+    req_start = build_frame(
+        seq=0,
+        frame_type=FRAME_TYPE_START,
+        payload_type=payload_type_req,
+        payload_data=struct.pack("<H", req_len),
+    )
+    write_frame(h, req_start)
+
+    # START for request session should be ACKed by firmware.
+    resp, rxs = wait_response_and_auto_ack(h, observe_sec, expect_types=(FRAME_TYPE_ACK,), verbose=verbose)
+    received_all.extend(rxs)
+    if resp is None:
+        if verbose:
+            print_summary(received_all, name)
+            print("  FAIL: request START was not ACKed.")
+        fill_diag(diag, "request START was not ACKed", received_all)
+        return False
+    got_start_ack = True
+
+    if req_len > 0:
+        chunks = chunk_payload(request_payload, MAX_DATA_PAYLOAD)
+        for idx, part in enumerate(chunks):
+            seq = idx + 1
+            is_last = idx == (len(chunks) - 1)
+            write_frame(
+                h,
+                build_frame(
+                    seq=seq,
+                    frame_type=FRAME_TYPE_DATA,
+                    payload_type=payload_type_req,
+                    payload_data=part,
+                ),
+            )
+
+            if not is_last:
+                resp, rxs = wait_response_and_auto_ack(h, observe_sec, expect_types=(FRAME_TYPE_ACK,), verbose=verbose)
+                received_all.extend(rxs)
+                if resp is None:
+                    if verbose:
+                        print_summary(received_all, name)
+                        print(f"  FAIL: request DATA(seq={seq}) did not receive expected ACK.")
+                    fill_diag(diag, f"request DATA(seq={seq}) did not receive expected ACK", received_all)
+                    return False
+                continue
+
+            # Last query DATA should transition directly to reply START.
+            t0 = time.time()
+            end_t = t0 + observe_sec
+            got_last_data_start = False
+            while time.time() < end_t:
+                buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+                if buf is None:
+                    continue
+                parsed = parse_frame(buf)
+                if parsed is None:
+                    continue
+                parsed["t_ms"] = int((time.time() - t0) * 1000)
+                received_all.append(parsed)
+                if verbose:
+                    print(
+                        f"[{parsed['t_ms']:>4} ms] received type={type_name(parsed['type'])}, "
+                        f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+                    )
+                send_ack_for_peer(h, parsed["seq"])
+
+                if parsed["type"] != FRAME_TYPE_START:
+                    continue
+                if parsed["payload_type"] != payload_type_req:
+                    if verbose:
+                        print_summary(received_all, name)
+                        print(f"  FAIL: reply START payload_type mismatch, actual={parsed['payload_type']}")
+                    fill_diag(diag, f"reply START payload_type mismatch: {parsed['payload_type']}", received_all)
+                    return False
+                if parsed["payload_len"] < 2:
+                    if verbose:
+                        print_summary(received_all, name)
+                        print(f"  FAIL: reply START payload_len invalid, actual={parsed['payload_len']}")
+                    fill_diag(diag, f"reply START payload_len invalid: {parsed['payload_len']}", received_all)
+                    return False
+                reply_total_len = struct.unpack_from("<H", buf, 4)[0]
+                got_reply_start = True
+                got_last_data_start = True
+                break
+
+            if not got_last_data_start:
+                if verbose:
+                    print_summary(received_all, name)
+                    print(f"  FAIL: request DATA(seq={seq}) did not receive expected START.")
+                fill_diag(diag, f"request DATA(seq={seq}) did not receive expected START", received_all)
+                return False
+    else:
+        # Keep compatibility for zero-length request use.
+        t0 = time.time()
+        end_t = t0 + observe_sec
+        got_zero_req_start = False
+        while time.time() < end_t:
+            buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+            if buf is None:
+                continue
+            parsed = parse_frame(buf)
+            if parsed is None:
+                continue
+            parsed["t_ms"] = int((time.time() - t0) * 1000)
+            received_all.append(parsed)
+            if verbose:
+                print(
+                    f"[{parsed['t_ms']:>4} ms] received type={type_name(parsed['type'])}, "
+                    f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+                )
+            send_ack_for_peer(h, parsed["seq"])
+
+            if parsed["type"] != FRAME_TYPE_START:
+                continue
+            if parsed["payload_type"] != payload_type_req:
+                if verbose:
+                    print_summary(received_all, name)
+                    print(f"  FAIL: reply START payload_type mismatch, actual={parsed['payload_type']}")
+                fill_diag(diag, f"reply START payload_type mismatch: {parsed['payload_type']}", received_all)
+                return False
+            if parsed["payload_len"] < 2:
+                if verbose:
+                    print_summary(received_all, name)
+                    print(f"  FAIL: reply START payload_len invalid, actual={parsed['payload_len']}")
+                fill_diag(diag, f"reply START payload_len invalid: {parsed['payload_len']}", received_all)
+                return False
+            reply_total_len = struct.unpack_from("<H", buf, 4)[0]
+            got_reply_start = True
+            got_zero_req_start = True
+            break
+
+        if not got_zero_req_start:
+            if verbose:
+                print_summary(received_all, name)
+                print("  FAIL: did not receive reply START after zero-length request.")
+            fill_diag(diag, "did not receive reply START after zero-length request", received_all)
+            return False
+
+    if reply_total_len is None:
+        if verbose:
+            print_summary(received_all, name)
+            print("  FAIL: reply_total_len is unknown.")
+        fill_diag(diag, "reply_total_len is unknown", received_all)
+        return False
+
+    if reply_total_len == 0:
+        got_reply_data = True
+    else:
+        t0 = time.time()
+        end_t = t0 + max(2.0, observe_sec * 4.0)
+        while time.time() < end_t:
+            buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+            if buf is None:
+                continue
+            parsed = parse_frame(buf)
+            if parsed is None:
+                continue
+            parsed["t_ms"] = int((time.time() - t0) * 1000)
+            received_all.append(parsed)
+            if verbose:
+                print(
+                    f"[{parsed['t_ms']:>4} ms] received type={type_name(parsed['type'])}, "
+                    f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+                )
+            send_ack_for_peer(h, parsed["seq"])
+
+            if parsed["type"] != FRAME_TYPE_DATA:
+                continue
+            if parsed["payload_type"] != payload_type_req:
+                if verbose:
+                    print_summary(received_all, name)
+                    print(f"  FAIL: reply DATA payload_type mismatch, actual={parsed['payload_type']}")
+                fill_diag(diag, f"reply DATA payload_type mismatch: {parsed['payload_type']}", received_all)
+                return False
+            if parsed["seq"] in seen_data_seq:
+                continue
+            seen_data_seq.add(parsed["seq"])
+            payload_len = parsed["payload_len"]
+            reply_payload.extend(buf[4 : 4 + payload_len])
+            if len(reply_payload) >= reply_total_len:
+                got_reply_data = True
+                break
+
+    ok = got_start_ack and got_reply_start and got_reply_data and len(reply_payload) == reply_total_len
+    if expected_reply_len is not None:
+        ok = ok and (reply_total_len == expected_reply_len)
+
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(
+                "  PASS: "
+                f"request_len={req_len}, reply_len={reply_total_len}, data_len={len(reply_payload)}"
+            )
+        else:
+            print(
+                "  FAIL: "
+                f"start_ack={got_start_ack}, reply_start={got_reply_start}, reply_data={got_reply_data}, "
+                f"request_len={req_len}, reply_total_len={reply_total_len}, data_len={len(reply_payload)}, "
+                f"expected_reply_len={expected_reply_len}"
+            )
+    if not ok:
+        fill_diag(
+            diag,
+            "chunked query flow check failed: "
+            f"start_ack={got_start_ack}, reply_start={got_reply_start}, reply_data={got_reply_data}, "
+            f"request_len={req_len}, reply_total_len={reply_total_len}, data_len={len(reply_payload)}, "
+            f"expected_reply_len={expected_reply_len}",
+            received_all,
+        )
+    return ok
+
+
 def run_continuous_stress_test(
     h: hid.device,
     observe_sec: float,
     rounds: int,
     stop_on_fail: bool = False,
     progress_every: int = 20,
-    flush_ms: int = 80,
 ) -> bool:
     name = f"continuous stress test ({rounds} rounds)"
     print(f"\n================ {name} ================")
@@ -839,28 +1111,46 @@ def run_continuous_stress_test(
         print("  SKIP: rounds <= 0")
         return True
 
+    get_key_req_payload = _build_stress_query_request_payload(DATA_TYPE_GET_KEY)
+    get_layer_req_payload = _build_stress_query_request_payload(DATA_TYPE_GET_LAYER_KEYMAP)
+    get_all_req_payload = _build_stress_query_request_payload(DATA_TYPE_GET_ALL_LAYER_KEYMAP)
+
     steps: List[Tuple[str, Callable[[Dict[str, object]], bool]]] = [
-        ("GET_KEY", lambda d: run_get_key_test(h, observe_sec, verbose=False, diag=d)),
+        (
+            "GET_KEY",
+            lambda d: run_chunked_query_request_expect_reply(
+                h,
+                observe_sec,
+                DATA_TYPE_GET_KEY,
+                "DATA_TYPE_GET_KEY chunked request test",
+                expected_reply_len=GET_KEY_EXPECTED_REPLY_LEN,
+                request_payload=get_key_req_payload,
+                verbose=False,
+                diag=d,
+            ),
+        ),
         (
             "GET_LAYER_KEYMAP",
-            lambda d: run_zero_len_request_expect_reply(
+            lambda d: run_chunked_query_request_expect_reply(
                 h,
                 observe_sec,
                 DATA_TYPE_GET_LAYER_KEYMAP,
-                "DATA_TYPE_GET_LAYER_KEYMAP test",
+                "DATA_TYPE_GET_LAYER_KEYMAP chunked request test",
                 expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+                request_payload=get_layer_req_payload,
                 verbose=False,
                 diag=d,
             ),
         ),
         (
             "GET_ALL_LAYER_KEYMAP",
-            lambda d: run_zero_len_request_expect_reply(
+            lambda d: run_chunked_query_request_expect_reply(
                 h,
                 observe_sec,
                 DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-                "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
+                "DATA_TYPE_GET_ALL_LAYER_KEYMAP chunked request test",
                 expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+                request_payload=get_all_req_payload,
                 verbose=False,
                 diag=d,
             ),
@@ -892,7 +1182,6 @@ def run_continuous_stress_test(
     failures: List[Tuple[int, str, str]] = []
     t0 = time.time()
     progress_every = max(1, progress_every)
-    flush_ms = max(0, flush_ms)
     ran = 0
 
     for idx in range(rounds):
@@ -912,7 +1201,6 @@ def run_continuous_stress_test(
                 break
         elif (idx + 1) % progress_every == 0:
             print(f"  progress: {idx + 1}/{rounds} rounds, failures={len(failures)}")
-        flush_in(h, ms=flush_ms)
 
     elapsed = time.time() - t0
     passed = ran - len(failures)
@@ -958,12 +1246,6 @@ def main() -> int:
         default=20,
         help="Print stress progress every N rounds (default: 20)",
     )
-    parser.add_argument(
-        "--stress-flush-ms",
-        type=int,
-        default=DEFAULT_STRESS_FLUSH_MS,
-        help=f"Inter-round input flush time in ms during stress test (default: {DEFAULT_STRESS_FLUSH_MS})",
-    )
     args = parser.parse_args()
 
     try:
@@ -972,56 +1254,8 @@ def main() -> int:
         results: List[Tuple[str, bool]] = []
         try:
             flush_in(h, ms=DEFAULT_START_FLUSH_MS)
-            suites = [
-                ("normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
-                ("normal receive test (multi DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
-                ("bad CRC test (single DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
-                ("bad CRC test (multi DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
-                ("single-session test (single DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=False)),
-                ("single-session test (multi DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=True)),
-                ("interrupt old-data continuation should fail", lambda: run_interrupted_old_data_should_fail_test(h, args.observe_sec)),
-                ("DATA_TYPE_GET_KEY test", lambda: run_get_key_test(h, args.observe_sec)),
-                (
-                    "DATA_TYPE_GET_LAYER_KEYMAP test",
-                    lambda: run_zero_len_request_expect_reply(
-                        h,
-                        args.observe_sec,
-                        DATA_TYPE_GET_LAYER_KEYMAP,
-                        "DATA_TYPE_GET_LAYER_KEYMAP test",
-                        expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
-                    ),
-                ),
-                (
-                    "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
-                    lambda: run_zero_len_request_expect_reply(
-                        h,
-                        args.observe_sec,
-                        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-                        "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
-                        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
-                    ),
-                ),
-                (
-                    "DATA_TYPE_SET_LAYER test",
-                    lambda: run_zero_len_request_expect_ack_only(
-                        h,
-                        args.observe_sec,
-                        DATA_TYPE_SET_LAYER,
-                        "DATA_TYPE_SET_LAYER test",
-                    ),
-                ),
-                (
-                    "DATA_TYPE_SET_LAYER_KEYMAP test",
-                    lambda: run_zero_len_request_expect_ack_only(
-                        h,
-                        args.observe_sec,
-                        DATA_TYPE_SET_LAYER_KEYMAP,
-                        "DATA_TYPE_SET_LAYER_KEYMAP test",
-                    ),
-                ),
-            ]
             if args.stress_rounds > 0:
-                suites.append(
+                suites = [
                     (
                         f"continuous stress test ({args.stress_rounds} rounds)",
                         lambda: run_continuous_stress_test(
@@ -1030,10 +1264,58 @@ def main() -> int:
                             rounds=args.stress_rounds,
                             stop_on_fail=args.stress_stop_on_fail,
                             progress_every=args.stress_progress_every,
-                            flush_ms=args.stress_flush_ms,
                         ),
                     )
-                )
+                ]
+            else:
+                suites = [
+                    ("normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
+                    ("normal receive test (multi DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
+                    ("bad CRC test (single DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
+                    ("bad CRC test (multi DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
+                    ("single-session test (single DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=False)),
+                    ("single-session test (multi DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=True)),
+                    ("interrupt old-data continuation should fail", lambda: run_interrupted_old_data_should_fail_test(h, args.observe_sec)),
+                    ("DATA_TYPE_GET_KEY test", lambda: run_get_key_test(h, args.observe_sec)),
+                    (
+                        "DATA_TYPE_GET_LAYER_KEYMAP test",
+                        lambda: run_zero_len_request_expect_reply(
+                            h,
+                            args.observe_sec,
+                            DATA_TYPE_GET_LAYER_KEYMAP,
+                            "DATA_TYPE_GET_LAYER_KEYMAP test",
+                            expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+                        ),
+                    ),
+                    (
+                        "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
+                        lambda: run_zero_len_request_expect_reply(
+                            h,
+                            args.observe_sec,
+                            DATA_TYPE_GET_ALL_LAYER_KEYMAP,
+                            "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
+                            expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+                        ),
+                    ),
+                    (
+                        "DATA_TYPE_SET_LAYER test",
+                        lambda: run_zero_len_request_expect_ack_only(
+                            h,
+                            args.observe_sec,
+                            DATA_TYPE_SET_LAYER,
+                            "DATA_TYPE_SET_LAYER test",
+                        ),
+                    ),
+                    (
+                        "DATA_TYPE_SET_LAYER_KEYMAP test",
+                        lambda: run_zero_len_request_expect_ack_only(
+                            h,
+                            args.observe_sec,
+                            DATA_TYPE_SET_LAYER_KEYMAP,
+                            "DATA_TYPE_SET_LAYER_KEYMAP test",
+                        ),
+                    ),
+                ]
 
             for name, fn in suites:
                 ok = fn()
