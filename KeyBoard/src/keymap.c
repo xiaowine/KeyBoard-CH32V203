@@ -6,94 +6,84 @@
 #include <stdbool.h>
 #include "keymap_loader.h"
 
-// 璁板綍涓婁竴娆″悎骞剁殑鎸夐敭浣嶆帺鐮侊紝鐢ㄤ簬妫€娴嬫壂鎻忛棿鐨勫彉鍖?
+// 记录上一次合并的按键位掩码，用于检测扫描间的变化
 static uint32_t prev_keys = 0;
 static uint16_t kb_heartbeat_counter = 0;
-static uint32_t raw_zero_counter = 0;
 
-/* 杩愯鏃跺崟灞傜紦鍐插尯锛歭oader 灏嗘妸閫変腑鐨?layer 鎷疯礉鍒版澶?*/
+/* 运行时单层缓冲区：loader 将把选中的 layer 拷贝到此处 */
 KeyMapping keymap_active[KEY_TOTAL_KEYS] __attribute__((section(".data"), used, aligned(4)));
 
+uint8_t keymap_get_count(const KeyMapping* m)
+{
+    for (uint8_t i = 0; i < MAX_CODE; ++i)
+    {
+        if (m->codes[i] == 0)
+            return i;
+    }
+    return MAX_CODE;
+}
+
 /**
- * 鏍稿績鍙戦€侀€昏緫锛氭壂鎻?-> 鏀堕泦 -> 鍒嗙粍 -> 鍙戦€?
+ * 核心发送逻辑：扫描 -> 收集 -> 分组 -> 发送
  */
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
 {
-    // 1. 鍚堝苟 24 浣嶆寜閿苟鍙栧弽锛?鍙?琛ㄧず鎸変笅锛?
-    // 娉ㄦ剰锛氭牴鎹綘鐨?HC165 鎺ョ嚎椤哄簭锛屽彲鑳介渶瑕佽皟鏁翠綅绉婚『搴?
+    // 1. 合并 24 位按键并取反（0变1表示按下）
+    // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
     const uint32_t raw = (uint32_t)snapshot[0] |
-                         (uint32_t)snapshot[1] << 8 |
-                         (uint32_t)snapshot[2] << 16;
-    // 鏈変簺纭欢鎴栬鍙栨儏鍐典笅锛岀┖闂叉椂杩斿洖 0x000000锛堟墍鏈変綅涓?0锛夛紝
-    // 鐩存帴鍙栧弽浼氬鑷村彉鎴愬叏 1锛堣鍒や负鎵€鏈夋寜閿鎸変笅锛夈€?
-    // 鑻ュ師濮嬪€间负鍏?0锛屽垯璁や负娌℃湁鎸変笅浠讳綍閿紱鍚﹀垯鎸夊師閫昏緫鍙栧弽銆?
+            (uint32_t)snapshot[1] << 8 |
+            (uint32_t)snapshot[2] << 16;
+    // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
+    // 直接取反会导致变成全 1（误判为所有按键被按下）。
+    // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
     const uint32_t keys = (raw == 0x000000) ? 0 : (~raw & 0x00FFFFFF);
-    if (raw == 0x000000)
-    {
-        raw_zero_counter++;
-        if ((raw_zero_counter % 500u) == 1u)
-        {
-            PRINT("Keymap trace: raw=0x000000 for %lu frames, keys forced to 0\r\n", (unsigned long)raw_zero_counter);
-        }
-    }
 
-    // 2. 鍙樺寲妫€娴嬶細濡傛灉涓庝笂娆′綅鎺╃爜鐩稿悓锛岃烦杩囧鐞嗕互鑺傜渷 CPU/USB
-    // 淇濆瓨鍘熷 keys 鍒?local 鍙橀噺锛屽悗缁綅鎵弿浼氫慨鏀逛复鏃跺彉閲?
+    // 2. 变化检测：如果与上次位掩码相同，跳过处理以节省 CPU/USB
+    // 保存原始 keys 到 local 变量，后续位扫描会修改临时变量
     const uint32_t changed = keys ^ prev_keys;
-    if (changed != 0)
-    {
-        PRINT("Keymap trace: snap=[%02X %02X %02X] raw=0x%06lX keys=0x%06lX changed=0x%06lX\r\n", snapshot[0], snapshot[1],
-              snapshot[2], (unsigned long)raw, (unsigned long)keys, (unsigned long)changed);
-    }
     if (changed == 0)
     {
-        // 濡傛灉鍚敤浜嗗績璺充笖杈惧埌闂撮殧锛屽垯寮哄埗閲嶅彂涓€娆″畬鏁存姤鍛婏紱鍚﹀垯鐩存帴杩斿洖
+        // 如果启用了心跳且达到间隔，则强制重发一次完整报告；否则直接返回
         kb_heartbeat_counter++;
         if (kb_heartbeat_counter < KB_HEARTBEAT_INTERVAL)
         {
-            return; // 鏃犲彉鍖栦笖鏈埌蹇冭烦鍛ㄦ湡锛岃烦杩囧悗缁敹闆嗕笌鍙戦€?
+            return; // 无变化且未到心跳周期，跳过后续收集与发送
         }
-        // 蹇冭烦瑙﹀彂锛氶噸缃鏁板苟缁х画鎵ц锛堝皢閲嶆柊鍙戦€佷笌涓婃鐩稿悓鐨勬姤鍛婏級
+        // 心跳触发：重置计数并继续执行（将重新发送与上次相同的报告）
         kb_heartbeat_counter = 0;
     }
     else
     {
-        // 鏈夊疄闄呭彉鍖栵紝娓呴浂蹇冭烦璁℃暟骞剁户缁鐞?
+        // 有实际变化，清零心跳计数并继续处理
         kb_heartbeat_counter = 0;
     }
 
-    // 3. 鏀堕泦鎵€鏈夋寜涓嬬殑 HID Usage ID锛堝尯鍒嗛敭鐩樹笌濯掍綋锛?
-    /* 浼犵粺 boot 鎶ュ憡鍙渶鏈€澶?6 涓敭锛涚敤灏忔暟缁勫苟鍘婚噸浠ヨ妭鐪佺┖闂翠笌閬垮厤閲嶅 */
+    // 3. 收集所有按下的 HID Usage ID（区分键盘与媒体）
+    /* 传统 boot 报告只需最多 6 个键；用小数组并去重以节省空间与避免重复 */
     static uint8_t kb_codes[BOOT_KEY_MAX] = {0};
-    /* NKRO 浣嶅浘锛?20 bits -> 15 bytes锛夊湪鎵弿鏃剁洿鎺ユ瀯寤?*/
+    /* NKRO 位图（120 bits -> 15 bytes）在扫描时直接构建 */
     uint8_t nkro_bitmap[15] = {0};
     static uint8_t prev_nkro[15] = {0};
-    /* consumer usages 闄愬畾涓烘渶澶?MAX_CODE锛堟弿杩扮鏀寔 3 涓級 */
+    /* consumer usages 限定为最多 MAX_CODE（描述符支持 3 个） */
     static uint16_t consumer_usages[MAX_CODE] = {0};
     uint8_t kb_total = 0;
     uint8_t consumer_total = 0;
-    uint8_t modifier_bits = 0;      // 鍚堝苟鎵€鏈夋寜涓嬮敭鐨勪慨楗颁綅锛堜粎閿洏鏈夋晥锛?
+    uint8_t modifier_bits = 0; // 合并所有按下键的修饰位（仅键盘有效）
     uint8_t mouse_buttons_mask = 0; /* bits 0..4 */
     int16_t mouse_wheel_sum = 0;
-    // 浣跨敤涓存椂鍙橀噺杩涜浣嶆壂鎻忥紝閬垮厤鐮村潖鍘熷 keys锛堢敤浜庢渶缁堟洿鏂?prev_keys锛?
-    const KeyMapping *km = keymap_active;
+    // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
+    const KeyMapping* km = keymap_active;
     uint32_t scan = keys;
     while (scan)
     {
         const uint32_t idx = get_bit_index(scan);
         if (idx < KEY_TOTAL_KEYS)
         {
-            const KeyMapping *m = &km[idx];
-            if (changed != 0)
-            {
-                PRINT("  map idx=%lu mod=0x%02X type=%u codes=[0x%04X,0x%04X,0x%04X]\r\n", (unsigned long)idx,
-                      (unsigned)m->modifiers, (unsigned)m->type, (unsigned)m->codes[0], (unsigned)m->codes[1],
-                      (unsigned)m->codes[2]);
-            }
+            const KeyMapping* m = &km[idx];
             uint8_t count = keymap_get_count(m);
             if (count == 0 && m->modifiers == 0 && m->type == KEY_TYPE_KEYBOARD)
             {
-                /* 鏃犳晥鏄犲皠锛岃烦杩?*/
+                /* 无效映射，跳过 */
                 scan &= scan - 1;
                 continue;
             }
@@ -101,7 +91,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             {
                 for (uint8_t i = 0; i < count; i++)
                 {
-                    /* 鍙敹闆嗘渶澶?MAX_CODE锛堥€氬父涓?3锛変釜 consumer usages */
+                    /* 只收集最多 MAX_CODE（通常为 3）个 consumer usages */
                     if (consumer_total < MAX_CODE)
                     {
                         consumer_usages[consumer_total++] = m->codes[i];
@@ -110,7 +100,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             }
             else if (m->type == KEY_TYPE_MOUSE_BUTTON)
             {
-                /* 榧犳爣鎸夐挳鏄犲皠锛氱疮绉寜閽帺鐮侊紙姣忎釜鏄犲皠鍙寘鍚涓寜閽帺鐮侊級 */
+                /* 鼠标按钮映射：累积按钮掩码（每个映射可包含多个按钮掩码） */
                 for (uint8_t i = 0; i < count; i++)
                 {
                     mouse_buttons_mask |= (m->codes[i] & 0x1F);
@@ -118,17 +108,17 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
             }
             else if (m->type == KEY_TYPE_MOUSE_WHEEL)
             {
-                /* 榧犳爣婊氳疆鏄犲皠锛氱疮绉粴杞閲忥紙codes[0] 瀛樺偍婊氳疆澧為噺锛屾寜闇€杞负鏈夌鍙凤級 */
+                /* 鼠标滚轮映射：累积滚轮增量（codes[0] 存储滚轮增量，按需转为有符号） */
                 mouse_wheel_sum += (int8_t)(m->codes[0] & 0xFF);
             }
             else
             {
-                // 绱Н淇グ浣嶏紙鑻ヨ鐗╃悊閿甫淇グ锛?
+                // 累积修饰位（若该物理键带修饰）
                 modifier_bits |= m->modifiers;
                 for (uint8_t i = 0; i < count; i++)
                 {
                     uint8_t code = (uint8_t)(m->codes[i] & 0xFF);
-                    /* 鍦ㄦ敹闆嗛樁娈甸檺鍒朵负 BOOT_KEY_MAX 骞跺幓閲?*/
+                    /* 在收集阶段限制为 BOOT_KEY_MAX 并去重 */
                     if (kb_total < BOOT_KEY_MAX)
                     {
                         bool found = false;
@@ -145,7 +135,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                             kb_codes[kb_total++] = code;
                         }
                     }
-                    /* 鐩存帴鏋勫缓 NKRO 浣嶅浘锛堜粎澶勭悊 0..119锛?*/
+                    /* 直接构建 NKRO 位图（仅处理 0..119） */
                     if (code < 120)
                     {
                         const uint8_t byte_idx = code / 8;
@@ -155,41 +145,37 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
                 }
             }
         }
-        scan &= scan - 1; // 娓呴櫎鏈€浣庝綅鐨?1
+        scan &= scan - 1; // 清除最低位的 1
     }
 
-    /* 灏嗕笂闈㈡敹闆嗗埌鐨?codes 鍒嗗埆鍙戦€佸嚭鍘伙紱鍒嗗埆浣跨敤閿洏涓庡獟浣撳彂閫佹帴鍙?*/
-    /* 淇濈暀蹇冭烦琛屼负锛氫粎鍦ㄦ湁鍙樻洿鎴栧績璺宠Е鍙戞椂鍙戦€?*/
-    // if (kb_total > 0 || modifier_bits != 0 || kb_heartbeat_counter == 0)
-    // {
-    //     USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
-    // }
-
-    /* 浠呭湪 NKRO 浣嶅浘涓庝笂娆′笉鍚屾垨蹇冭烦鏃跺彂閫?*/
-    if (memcmp(nkro_bitmap, prev_nkro, sizeof(nkro_bitmap)) != 0 || kb_heartbeat_counter == 0)
+    if (keymap_boot_config_ram.bits.normal_mode)
     {
-        USBD_SendNKROBitmap(modifier_bits, nkro_bitmap);
-        memcpy(prev_nkro, nkro_bitmap, sizeof(nkro_bitmap));
+        if (kb_total > 0 || modifier_bits != 0 || kb_heartbeat_counter == 0)
+        {
+            USBD_SendKeyboardReports(modifier_bits, kb_codes, kb_total);
+        }
+    }
+    else
+    {
+        if (memcmp(nkro_bitmap, prev_nkro, sizeof(nkro_bitmap)) != 0 || kb_heartbeat_counter == 0)
+        {
+            USBD_SendNKROBitmap(modifier_bits, nkro_bitmap);
+            memcpy(prev_nkro, nkro_bitmap, sizeof(nkro_bitmap));
+        }
     }
 
     if (consumer_total > 0 || kb_heartbeat_counter == 0)
     {
-        /* 鍙戦€佸獟浣撴姤鍛婏紙鑻ユ病鏈夊獟浣撴寜閿篃浼氬彂閫佺┖鎶ュ憡浠ヤ究閲婃斁涔嬪墠鐨勭姸鎬侊級 */
+        /* 发送媒体报告（若没有媒体按键也会发送空报告以便释放之前的状态） */
 
         USBD_SendConsumerReport(consumer_usages, consumer_total);
     }
     if (mouse_buttons_mask != 0 || mouse_wheel_sum != 0 || kb_heartbeat_counter == 0)
     {
-        /* 鍙戦€侀紶鏍囨姤鍛婏紙鑻ユ湁榧犳爣鎸夐敭鎴栨粴杞姩浣滐級 */
+        /* 发送鼠标报告（若有鼠标按键或滚轮动作） */
         USBD_SendMouseReport(mouse_buttons_mask, mouse_wheel_sum);
     }
 
-    // 鏇存柊 prev_keys 涓烘湰娆″揩鐓х殑鐪熷疄閿綅锛堟敞鎰忎笂闈綅鎵弿浣跨敤浜嗗壇鏈?scan锛?
-    if (changed != 0)
-    {
-        PRINT("  send mod=0x%02X kb_total=%u consumer_total=%u mouse_btn=0x%02X wheel=%d\r\n", (unsigned)modifier_bits,
-              (unsigned)kb_total, (unsigned)consumer_total, (unsigned)mouse_buttons_mask, (int)mouse_wheel_sum);
-    }
-
+    // 更新 prev_keys 为本次快照的真实键位（注意上面位扫描使用了副本 scan）
     prev_keys = keys;
 }

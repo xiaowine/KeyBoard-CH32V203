@@ -53,6 +53,4 @@ void key_start_scan(void);
 uint8_t key_transfer_complete(void);
 void key_copy_snapshot(uint8_t dest[HC165_COUNT]);
 
-void output_data(const uint8_t rx_buf[HC165_COUNT]);
-
 #endif

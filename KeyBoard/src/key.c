@@ -122,27 +122,6 @@ void key_start_scan(void)
     DMA_Cmd(DMA1_Channel3, ENABLE);
 }
 
-void output_data(const uint8_t rx_buf[HC165_COUNT])
-{
-    char buffer[256];
-    int offset = 0;
-
-    for (uint8_t i = 0; i < HC165_COUNT; ++i)
-    {
-        offset += snprintf(buffer + offset, sizeof(buffer) - offset, "line%u: ", (unsigned)i);
-        if (offset >= (int)sizeof(buffer) - 10)
-            break;
-
-        for (int bit = 7; bit >= 0; --bit)
-            buffer[offset++] = ((rx_buf[i] >> bit) & 1) ? '1' : '0';
-
-        buffer[offset++] = '\r';
-        buffer[offset++] = '\n';
-    }
-
-    buffer[offset] = '\0';
-    PRINT("%s", buffer);
-}
 
 /**
  * @brief 将本次采样存入指定槽位

@@ -33,15 +33,7 @@ typedef struct __attribute__((packed))
 
 extern KeyMapping keymap_active[KEY_TOTAL_KEYS];
 
-static inline uint8_t keymap_get_count(const KeyMapping *m)
-{
-    for (uint8_t i = 0; i < MAX_CODE; ++i)
-    {
-        if (m->codes[i] == 0)
-            return i;
-    }
-    return MAX_CODE;
-}
+uint8_t keymap_get_count(const KeyMapping *m);
 
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 

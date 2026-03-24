@@ -21,7 +21,7 @@ volatile uint8_t scan_timeout_ticks = 0;
 volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
 void app_init(void)
 {
@@ -84,7 +84,7 @@ void app_init(void)
         RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
 
         TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
-        TIM_TimeBaseInitStructure.TIM_Period = 2999;
+        TIM_TimeBaseInitStructure.TIM_Period = 4999;
         TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
@@ -111,16 +111,6 @@ void app_init(void)
 
 void app_run(void)
 {
-    if (time1ms_tick)
-    {
-        kb_send_snapshot(last_snapshot);
-        time1ms_tick = 0;
-    }
-    if (time5ms_tick)
-    {
-        comm_controller_process();
-        time5ms_tick = 0;
-    }
     switch (key_scan_state)
     {
     case KEY_STATE_SCANNING:
@@ -152,6 +142,17 @@ void app_run(void)
         break;
     default:
         break;
+    }
+
+    if (time1ms_tick)
+    {
+        kb_send_snapshot(last_snapshot);
+        time1ms_tick = 0;
+    }
+    if (time5ms_tick)
+    {
+        comm_controller_process();
+        time5ms_tick = 0;
     }
 
     if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
@@ -189,7 +190,7 @@ RAM INTF void TIM3_IRQHandler(void)
     if (TIM_GetITStatus(TIM3, TIM_IT_Update) == SET)
     {
         scan_tick_counter++;
-
+        time1ms_tick = 1;
         /* 如果当前空闲，启动新的扫描 */
         if (key_scan_state == KEY_STATE_IDLE)
         {
@@ -216,7 +217,7 @@ RAM INTF void TIM4_IRQHandler(void)
     }
 }
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len)
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len)
 {
     (void)payload;
     (void)payload_len;
@@ -224,36 +225,36 @@ void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t
     switch (payload_type)
     {
     case DATA_TYPE_GET_KEY:
-    {
-        comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
-        break;
-    }
+        {
+            comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
+            break;
+        }
     case DATA_TYPE_GET_LAYER_KEYMAP:
-    {
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-        /* 发送当前运行时已加载的一层（位于 keymap_active） */
-        comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t *)keymap_active, layer_size);
-        break;
-    }
+        {
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            /* 发送当前运行时已加载的一层（位于 keymap_active） */
+            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)keymap_active, layer_size);
+            break;
+        }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
-    {
-        /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
-        // NOLINTNEXTLINE(*-reserved-identifier)
-        extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-        const uint8_t *flash_base = &_config_lma[0];
-        const uint8_t *layers_src = flash_base + sizeof(KeymapBootConfig);
-        comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
-        break;
-    }
+        {
+            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+            // NOLINTNEXTLINE(*-reserved-identifier)
+            extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            const uint8_t* flash_base = &_config_lma[0];
+            const uint8_t* layers_src = flash_base + sizeof(KeymapBootConfig);
+            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
+            break;
+        }
     case DATA_TYPE_SET_LAYER:
-    {
-        break;
-    }
+        {
+            break;
+        }
     case DATA_TYPE_SET_LAYER_KEYMAP:
-    {
-        break;
-    }
+        {
+            break;
+        }
     default:
         break;
     }
