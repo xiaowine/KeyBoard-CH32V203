@@ -21,7 +21,7 @@ volatile uint8_t scan_timeout_ticks = 0;
 volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
 
 void app_init(void)
 {
@@ -29,7 +29,7 @@ void app_init(void)
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
 
-    /* 按 FLASH 中的掩码（KEYMAP_LOAD_MASK）选择性加载 keymap 层到 RAM */
+    /* 按 FLASH 中的掩码（KEYMAP_BOOT_CONFIG）选择性加载 keymap 层到 RAM */
     keymap_loader_init();
 
     // 编码器初始化（TIM）
@@ -216,7 +216,7 @@ RAM INTF void TIM4_IRQHandler(void)
     }
 }
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len)
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len)
 {
     (void)payload;
     (void)payload_len;
@@ -224,38 +224,36 @@ void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t
     switch (payload_type)
     {
     case DATA_TYPE_GET_KEY:
-        {
-            comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
-            break;
-        }
+    {
+        comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
+        break;
+    }
     case DATA_TYPE_GET_LAYER_KEYMAP:
-        {
-            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-            /* 发送当前运行时已加载的一层（位于 keymap_active） */
-            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)keymap_active, layer_size);
-            break;
-        }
+    {
+        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+        /* 发送当前运行时已加载的一层（位于 keymap_active） */
+        comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t *)keymap_active, layer_size);
+        break;
+    }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
-        {
-            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
-            //NOLINTNEXTLINE(*-reserved-identifier)
-            extern uint8_t _keymap_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
-            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-            const uint8_t* flash_base = &_keymap_lma[0];
-            uintptr_t p = (uintptr_t)flash_base + 1u; /* 跳过首字节的 image header */
-            p = p + 3u & ~3u; /* 向上对齐到 4 字节边界 */
-            const uint8_t* layers_src = (const uint8_t*)p;
-            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
-            break;
-        }
+    {
+        /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+        // NOLINTNEXTLINE(*-reserved-identifier)
+        extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+        const uint8_t *flash_base = &_config_lma[0];
+        const uint8_t *layers_src = flash_base + sizeof(KeymapBootConfig);
+        comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
+        break;
+    }
     case DATA_TYPE_SET_LAYER:
-        {
-            break;
-        }
+    {
+        break;
+    }
     case DATA_TYPE_SET_LAYER_KEYMAP:
-        {
-            break;
-        }
+    {
+        break;
+    }
     default:
         break;
     }

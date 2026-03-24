@@ -4,40 +4,55 @@
 
 #include "keymap.h"
 
-// 外部符号：FLASH 中 `.keymap` 段起始地址（LMA）
-extern uint8_t _keymap_lma[];
+// 链接脚本导出的符号：FLASH 中 .config 段起始地址（LMA）
+extern uint8_t _config_lma[]; // NOLINT(*-reserved-identifier)
 
-/* 运行时记录当前加载的层索引：-1 表示未加载 */
-static uint8_t loaded_layer = -1;
+// 运行时记录当前已加载层索引；0xFF 表示未加载
+static uint8_t loaded_layer = (uint8_t)-1;
 
-/* 初始化：读取 FLASH 起始的 1 字节层索引并加载该单层（单层设计，兼容运行时的 loaded_mask） */
+static void keymap_loader_dump_loaded_layer(uint8_t layer)
+{
+    PRINT("Keymap loader: dump loaded layer %u\r\n", (unsigned)layer);
+    for (uint8_t i = 0; i < (uint8_t)KEY_TOTAL_KEYS; ++i)
+    {
+        const KeyMapping *m = &keymap_active[i];
+        PRINT("  key[%02u] mod=0x%02X type=%u codes=[0x%04X,0x%04X,0x%04X]\r\n", (unsigned)i, (unsigned)m->modifiers,
+              (unsigned)m->type, (unsigned)m->codes[0], (unsigned)m->codes[1], (unsigned)m->codes[2]);
+    }
+}
+
+// 启动初始化：从 FLASH 读取 32bit 配置头，并按 boot_layer 尝试加载
 void keymap_loader_init(void)
 {
-    /* 先清零运行时活动层缓冲区（只需清一个层的大小） */
     const size_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
     memset(keymap_active, 0, layer_size);
 
-    const uint8_t* flash_base = &_keymap_lma[0];
-    const uint8_t layer_byte = flash_base[0];
+    const KeymapBootConfig boot_cfg = {.raw = *(const uint32_t *)&_config_lma[0]};
+    const uint8_t layer_byte = (uint8_t)boot_cfg.bits.boot_layer;
+    const uint8_t ver_cfg = (uint8_t)boot_cfg.bits.ver;
 
     int active_layer = -1;
-    /* 如果首字节是合法层索引则尝试加载该层；否则回退加载 layer0 */
     if (layer_byte < (uint8_t)KEYMAP_LAYERS)
     {
         keymap_loader_load_layer(layer_byte);
     }
     else
     {
-        keymap_loader_load_layer(0);
+        PRINT("Keymap loader: boot layer %u out of range, skip loading\r\n", (unsigned)layer_byte);
     }
 
-    /* 根据 loaded_layer 确定实际生效层（-1 表示未加载） */
-    if (loaded_layer >= 0)
+    if (loaded_layer != (uint8_t)-1)
     {
         active_layer = (int)loaded_layer;
     }
-    PRINT("Keymap loader: image_layer=0x%02X, active_layer=%d, max_layers=%d\r\n", (unsigned)layer_byte, active_layer,
-          (int)KEYMAP_LAYERS);
+
+    PRINT("Keymap loader: boot_layer=%u, ver_cfg=0x%X, active_layer=%d, max_layers=%d\r\n", (unsigned)layer_byte,
+          (unsigned)ver_cfg, active_layer, (int)KEYMAP_LAYERS);
+
+    if (loaded_layer != (uint8_t)-1)
+    {
+        keymap_loader_dump_loaded_layer(loaded_layer);
+    }
 }
 
 uint8_t keymap_loader_loaded_layer(void)
@@ -45,59 +60,55 @@ uint8_t keymap_loader_loaded_layer(void)
     return loaded_layer;
 }
 
-/* 动态加载单层：从 flash 紧凑布局中拷贝指定 layer 到 keymap_active */
+// 将指定层从 FLASH 镜像加载到 keymap_active
 void keymap_loader_load_layer(uint8_t layer)
 {
-    /* 若请求越界则回退到 layer0（不立即返回） */
     if (layer >= KEYMAP_LAYERS)
     {
-        PRINT("Keymap loader: requested layer %u out of range, fallback to layer 0\r\n", (unsigned)layer);
-        layer = 0;
+        PRINT("Keymap loader: requested layer %u out of range, skip loading\r\n", (unsigned)layer);
+        return;
     }
 
     const size_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-    /* FLASH 布局：首字节为单字节层索引（image header），后续的 KEY_MAP 按 4 字节对齐放置。
-      因此需要将索引字节后的地址向上对齐到 4 字节边界再计算层偏移。 */
-    const uint8_t* flash_base = (const uint8_t*)&_keymap_lma[0];
-    uintptr_t p = (uintptr_t)flash_base + 1; /* 跳过索引字节 */
-    /* 向上对齐到 4 字节边界 */
-    p = (p + 3u) & ~((uintptr_t)3u);
-    const uint8_t* layers_src = (const uint8_t*)p;
-    const uint8_t* src = layers_src + ((size_t)layer * layer_size);
-    /* 检测该层是否有数据：若整层全为 0x00 或全为 0xFF，则视为未写入/空层。
-       若这是非 0 层的空数据，则尝试回退加载 layer0；若 layer0 也空则最终跳过加载。 */
+
+    // FLASH 布局：前 4 字节为配置头，后续是层数据
+    const uint8_t *flash_base = (const uint8_t *)&_config_lma[0];
+    const uint8_t *layers_src = flash_base + sizeof(KeymapBootConfig);
+    const uint8_t *src = layers_src + (size_t)layer * layer_size;
+
+    /* 空层检测：
+     * 1) 整层全 0x00
+     * 2) 整层全 0xFF
+     * 3) 满足 0xE339 图样：字读 0xE339E339，半字读 0xE339，
+     *    字节读按地址奇偶分别为 0x39 / 0xE3
+     */
+    int all_zero = 1;
+    int all_ff = 1;
+    int all_e339 = 1;
+    for (size_t i = 0; i < layer_size; ++i)
     {
-        int all_zero = 1;
-        int all_ff = 1;
-        for (size_t i = 0; i < layer_size; ++i)
-        {
-            uint8_t b = src[i];
-            if (b != 0x00)
-                all_zero = 0;
-            if (b != 0xFF)
-                all_ff = 0;
-            if (!all_zero && !all_ff)
-                break;
-        }
-        if (all_zero || all_ff)
-        {
-            PRINT("Keymap loader: layer %u empty (all %s)\r\n", (unsigned)layer, all_zero ? "0x00" : "0xFF");
-            if (layer != 0)
-            {
-                PRINT("Keymap loader: fallback to layer 0\r\n");
-                /* 尝试加载 layer0（避免无限递归：如果 layer==0 则不再回退） */
-                keymap_loader_load_layer(0);
-                return;
-            }
-            else
-            {
-                PRINT("Keymap loader: layer 0 empty, skip loading\r\n");
-                return;
-            }
-        }
+        const uint8_t b = src[i];
+        if (b != 0x00)
+            all_zero = 0;
+        if (b != 0xFF)
+            all_ff = 0;
+
+        const uintptr_t addr = (uintptr_t)(src + i);
+        const uint8_t expected = (addr & 1u) == 0u ? 0x39u : 0xE3u;
+        if (b != expected)
+            all_e339 = 0;
+
+        if (!all_zero && !all_ff && !all_e339)
+            break;
     }
-    void* dst = (void*)keymap_active;
-    memcpy(dst, src, layer_size);
-    /* 标记当前唯一加载的层索引 */
-    loaded_layer = (int8_t)layer;
+
+    if (all_zero || all_ff || all_e339)
+    {
+        const char *reason = all_zero ? "0x00" : (all_ff ? "0xFF" : "0xE339 pattern");
+        PRINT("Keymap loader: layer %u empty (all %s), skip loading\r\n", (unsigned)layer, reason);
+        return;
+    }
+
+    memcpy((void *)keymap_active, src, layer_size);
+    loaded_layer = layer;
 }

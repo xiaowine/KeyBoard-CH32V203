@@ -8,7 +8,7 @@ PROVIDE( _stack_size = __stack_size );
 MEMORY
 {  
   FLASH (rx) : ORIGIN = 0x00000000, LENGTH = 62K
-  KEYMAP_FLASH (rx) : ORIGIN = ORIGIN(FLASH) + LENGTH(FLASH), LENGTH = 2K
+  CONFIG_FLASH (rx) : ORIGIN = ORIGIN(FLASH) + LENGTH(FLASH), LENGTH = 2K
   RAM (xrw) : ORIGIN = 0x20000000, LENGTH = 20K
 }
 
@@ -168,15 +168,15 @@ SECTIONS
 	} >RAM AT>FLASH
 
 
-		.keymap :
+		.config :
 		{
 			. = ALIGN(4);
-			PROVIDE(_keymap_lma = .);
-			PROVIDE(_keymap_vma = .);
-			KEEP(*(.keymap))
+			PROVIDE(_config_lma = .);
+			PROVIDE(_config_vma = .);
+			KEEP(*(.config))
 			. = ALIGN(4);
-			PROVIDE(_keymap_end = .);
-		} >KEYMAP_FLASH
+			PROVIDE(_config_end = .);
+		} >CONFIG_FLASH
 
 		PROVIDE( _end = _ebss);
 		PROVIDE( end = . );
