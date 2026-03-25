@@ -57,10 +57,14 @@ typedef enum
     DATA_TYPE_GET_LAYER_KEYMAP = 0b0010,
     /** 读取全部层按键映射。 */
     DATA_TYPE_GET_ALL_LAYER_KEYMAP = 0b0100,
-    /** 设置当前层（预留）。 */
+    /** 设置当前层。 */
     DATA_TYPE_SET_LAYER = 0b0001,
-    /** 设置层映射（预留）。 */
+    /** 设置启动层 */
+    DATA_TYPE_SET_BOOT_LAYER = 0b0111,
+    /** 设置层映射 */
     DATA_TYPE_SET_LAYER_KEYMAP = 0b0011,
+    /** 设置全部层映射 */
+    DATA_TYPE_SET_ALL_LAYER_KEYMAP = 0b1111,
 } DATA_TYPE;
 
 /** @brief 发送状态机状态定义。 */
@@ -145,7 +149,7 @@ typedef struct
     /** 已累计接收的字节数。 */
     uint16_t received_payload_len;
     /** 接收缓存指针，长度为 expected_payload_len。 */
-    uint8_t *payload_buf;
+    uint8_t* payload_buf;
 } ReceiveHandle;
 
 /** @brief 发送方向上下文。 */
@@ -183,7 +187,7 @@ typedef struct
     /** 已被 ACK 的字节数。 */
     uint16_t acked_payload_len;
     /** 回复缓存指针，长度为 payload_len。 */
-    uint8_t *payload_buf;
+    uint8_t* payload_buf;
 } ReplySession;
 
 /**
@@ -193,7 +197,7 @@ typedef struct
  * @param payload      业务数据指针；当 payload_len 为 0 时可能为 NULL。
  * @param payload_len  业务数据长度。
  */
-typedef void (*comm_rx_callback_t)(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
+typedef void (*comm_rx_callback_t)(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
 /** @brief 驱动通信控制器一次收发调度（建议周期调用）。 */
 void comm_controller_process(void);
@@ -206,6 +210,6 @@ void comm_register_rx_callback(comm_rx_callback_t callback);
  *
  * 若已有待发/在发业务回复，本函数会按单会话策略覆盖旧回复。
  */
-void comm_queue_reply(uint8_t payload_type, const uint8_t *data, uint16_t len);
+void comm_queue_reply(uint8_t payload_type, const uint8_t* data, uint16_t len);
 
 #endif

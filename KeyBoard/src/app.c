@@ -1,5 +1,8 @@
 #include "app.h"
 
+#include <stdlib.h>
+#include <string.h>
+
 #include "comm_controller.h"
 #include "encode.h"
 #include "key.h"
@@ -21,7 +24,7 @@ volatile uint8_t scan_timeout_ticks = 0;
 volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
 
 void app_init(void)
 {
@@ -217,44 +220,111 @@ RAM INTF void TIM4_IRQHandler(void)
     }
 }
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len)
+void app_comm_rx_callback(const uint8_t payload_type, const uint8_t *payload, const uint16_t payload_len)
 {
-    (void)payload;
-    (void)payload_len;
-
     switch (payload_type)
     {
     case DATA_TYPE_GET_KEY:
-        {
-            comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
-            break;
-        }
+    {
+        comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
+        break;
+    }
     case DATA_TYPE_GET_LAYER_KEYMAP:
-        {
-            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-            /* 发送当前运行时已加载的一层（位于 keymap_active） */
-            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)keymap_active, layer_size);
-            break;
-        }
+    {
+        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+        /* 发送当前运行时已加载的一层（位于 keymap_active） */
+        comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t *)keymap_active, layer_size);
+        break;
+    }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
-        {
-            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
-            // NOLINTNEXTLINE(*-reserved-identifier)
-            extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
-            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-            const uint8_t* flash_base = &_config_lma[0];
-            const uint8_t* layers_src = flash_base + sizeof(KeymapBootConfig);
-            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
-            break;
-        }
+    {
+        /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+        // NOLINTNEXTLINE(*-reserved-identifier)
+        extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+        const uint8_t *flash_base = &_config_lma[0];
+        const uint8_t *layers_src = flash_base + sizeof(KeymapBootConfig);
+        comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
+        break;
+    }
     case DATA_TYPE_SET_LAYER:
+    {
+        uint8_t layer = 0;
+        if (payload_len < sizeof(layer))
         {
-            break;
+            return;
         }
+        memcpy(&layer, payload, sizeof(layer));
+        if (layer >= KEYMAP_LAYERS)
+        {
+            return;
+        }
+        keymap_loader_load_layer(layer);
+        break;
+    }
+    case DATA_TYPE_SET_BOOT_LAYER:
+    {
+        uint8_t layer = 0;
+        if (payload_len < sizeof(layer))
+        {
+            return;
+        }
+        memcpy(&layer, payload, sizeof(layer));
+        if (layer >= KEYMAP_LAYERS)
+        {
+            return;
+        }
+        KeymapBootConfig keymap_boot_config = {0};
+
+        keymap_loader_read_boot_config(&keymap_boot_config);
+        keymap_boot_config.bits.boot_layer = layer;
+        if (keymap_loader_write_boot_config(&keymap_boot_config))
+        {
+            PRINT("Set boot layer: %u\r\n", (unsigned)layer);
+        }
+        break;
+    }
     case DATA_TYPE_SET_LAYER_KEYMAP:
+    {
+        const int active_layer = keymap_boot_config_ram.bits.boot_layer;
+        const uint16_t layer_size = (uint16_t)(sizeof(KeyMapping) * KEY_TOTAL_KEYS);
+
+        if ((active_layer < 0) || (active_layer >= KEYMAP_LAYERS))
         {
-            break;
+            PRINT("Set layer keymap: no active layer\r\n");
+            return;
         }
+
+        if (payload_len != layer_size)
+        {
+            PRINT("Set layer keymap: invalid payload length %u, expected %u\r\n",
+                  (unsigned)payload_len, (unsigned)layer_size);
+            return;
+        }
+
+        if (keymap_loader_write_layer((uint8_t)active_layer, payload, payload_len))
+        {
+            PRINT("Set layer keymap: layer=%u\r\n", (unsigned)active_layer);
+        }
+        break;
+    }
+    case DATA_TYPE_SET_ALL_LAYER_KEYMAP:
+    {
+        const uint16_t all_layers_size = (uint16_t)(sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS);
+
+        if (payload_len != all_layers_size)
+        {
+            PRINT("Set all layer keymap: invalid payload length %u, expected %u\r\n",
+                  (unsigned)payload_len, (unsigned)all_layers_size);
+            return;
+        }
+
+        if (keymap_loader_write_all_layers(payload, payload_len))
+        {
+            PRINT("Set all layer keymap: layers=%u\r\n", (unsigned)KEYMAP_LAYERS);
+        }
+        break;
+    }
     default:
         break;
     }

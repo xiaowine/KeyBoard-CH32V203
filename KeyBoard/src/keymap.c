@@ -13,7 +13,7 @@ static uint16_t kb_heartbeat_counter = 0;
 /* 运行时单层缓冲区：loader 将把选中的 layer 拷贝到此处 */
 KeyMapping keymap_active[KEY_TOTAL_KEYS] __attribute__((section(".data"), used, aligned(4)));
 
-uint8_t keymap_get_count(const KeyMapping* m)
+uint8_t keymap_get_count(const KeyMapping *m)
 {
     for (uint8_t i = 0; i < MAX_CODE; ++i)
     {
@@ -31,8 +31,8 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     // 1. 合并 24 位按键并取反（0变1表示按下）
     // 注意：根据你的 HC165 接线顺序，可能需要调整位移顺序
     const uint32_t raw = (uint32_t)snapshot[0] |
-            (uint32_t)snapshot[1] << 8 |
-            (uint32_t)snapshot[2] << 16;
+                         (uint32_t)snapshot[1] << 8 |
+                         (uint32_t)snapshot[2] << 16;
     // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
     // 直接取反会导致变成全 1（误判为所有按键被按下）。
     // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
@@ -68,18 +68,18 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     static uint16_t consumer_usages[MAX_CODE] = {0};
     uint8_t kb_total = 0;
     uint8_t consumer_total = 0;
-    uint8_t modifier_bits = 0; // 合并所有按下键的修饰位（仅键盘有效）
+    uint8_t modifier_bits = 0;      // 合并所有按下键的修饰位（仅键盘有效）
     uint8_t mouse_buttons_mask = 0; /* bits 0..4 */
     int16_t mouse_wheel_sum = 0;
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
-    const KeyMapping* km = keymap_active;
+    const KeyMapping *km = keymap_active;
     uint32_t scan = keys;
     while (scan)
     {
         const uint32_t idx = get_bit_index(scan);
         if (idx < KEY_TOTAL_KEYS)
         {
-            const KeyMapping* m = &km[idx];
+            const KeyMapping *m = &km[idx];
             uint8_t count = keymap_get_count(m);
             if (count == 0 && m->modifiers == 0 && m->type == KEY_TYPE_KEYBOARD)
             {

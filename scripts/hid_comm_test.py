@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import argparse
+import random
 import re
 import struct
 import sys
@@ -32,6 +33,22 @@ DEFAULT_START_FLUSH_MS = _scale_ms(250, 80)
 DEFAULT_CASE_FLUSH_MS = _scale_ms(120, 40)
 DEFAULT_STEP_FLUSH_MS = _scale_ms(40, 12)
 STRESS_QUERY_REQUEST_LEN = MAX_DATA_PAYLOAD + 24
+SINGLE_CASE_CHOICES = (
+    "normal-single",
+    "normal-multi",
+    "bad-crc-single",
+    "bad-crc-multi",
+    "session-single",
+    "session-multi",
+    "interrupt-old-data",
+    "get-key",
+    "get-layer-keymap",
+    "get-all-layer-keymap",
+    "set-layer",
+    "set-layer-keymap",
+    "set-all-layer-keymap",
+    "set-boot-layer",
+)
 
 _TYPE_DEFAULTS = {
     "FRAME_TYPE_ERROR": 0,
@@ -44,6 +61,8 @@ _TYPE_DEFAULTS = {
     "DATA_TYPE_GET_LAYER_KEYMAP": 2,
     "DATA_TYPE_SET_LAYER_KEYMAP": 3,
     "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 4,
+    "DATA_TYPE_SET_ALL_LAYER_KEYMAP": 15,
+    "DATA_TYPE_SET_BOOT_LAYER": 7,
 }
 
 
@@ -95,7 +114,9 @@ DATA_TYPE_SET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_LAYER_KEYMAP"]
 DATA_TYPE_GET_KEY = _TYPE_VALUES["DATA_TYPE_GET_KEY"]
 DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
 DATA_TYPE_GET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_ALL_LAYER_KEYMAP"]
+DATA_TYPE_SET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_ALL_LAYER_KEYMAP"]
 DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
+DATA_TYPE_SET_BOOT_LAYER = _TYPE_VALUES["DATA_TYPE_SET_BOOT_LAYER"]
 TRANSPORT_TEST_PAYLOAD_TYPE = DATA_TYPE_SET_LAYER
 GET_KEY_EXPECTED_REPLY_LEN = 3
 
@@ -107,7 +128,7 @@ def _read_define_u32(text: str, name: str) -> Optional[int]:
     return None
 
 
-def load_keymap_reply_sizes() -> Tuple[int, int]:
+def load_keymap_reply_sizes() -> Tuple[int, int, int]:
     root = Path(__file__).resolve().parent.parent
     key_h = root / "KeyBoard" / "inc" / "key.h"
     keymap_h = root / "KeyBoard" / "inc" / "keymap.h"
@@ -124,7 +145,7 @@ def load_keymap_reply_sizes() -> Tuple[int, int]:
         keymap_loader_text = keymap_loader_h.read_text(encoding="utf-8", errors="ignore")
     except OSError:
         layer_size_fallback = (1 + 2 * max_code + 1) * key_total_keys
-        return layer_size_fallback, layer_size_fallback * keymap_layers
+        return layer_size_fallback, layer_size_fallback * keymap_layers, keymap_layers
 
     hc_val = _read_define_u32(key_text, "HC165_COUNT")
     if hc_val is not None:
@@ -157,10 +178,10 @@ def load_keymap_reply_sizes() -> Tuple[int, int]:
     key_mapping_size = 1 + 2 * max_code + 1
     layer_size = key_mapping_size * key_total_keys
     all_size = layer_size * keymap_layers
-    return layer_size, all_size
+    return layer_size, all_size, keymap_layers
 
 
-LAYER_KEYMAP_REPLY_LEN, ALL_LAYER_KEYMAP_REPLY_LEN = load_keymap_reply_sizes()
+LAYER_KEYMAP_REPLY_LEN, ALL_LAYER_KEYMAP_REPLY_LEN, KEYMAP_LAYER_COUNT = load_keymap_reply_sizes()
 
 
 def stm32_crc32_words_le(data60: bytes) -> int:
@@ -856,6 +877,538 @@ def run_zero_len_request_expect_ack_only(
     return ok
 
 
+def run_set_boot_layer_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_SET_BOOT_LAYER test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    if KEYMAP_LAYER_COUNT <= 0:
+        if verbose:
+            print("  SKIP: KEYMAP_LAYER_COUNT <= 0")
+        fill_diag(diag, "invalid KEYMAP_LAYER_COUNT", [])
+        return False
+
+    layer = random.randrange(KEYMAP_LAYER_COUNT)
+    payload = bytes([layer])
+    received_all: List[Dict[str, int]] = []
+
+    if not send_start_expect_ack(
+        h,
+        len(payload),
+        observe_sec,
+        received_all,
+        payload_type=DATA_TYPE_SET_BOOT_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: START stage failed for boot_layer={layer}.")
+        fill_diag(diag, f"START stage failed for boot_layer={layer}", received_all)
+        return False
+
+    if not send_data_expect_type(
+        h,
+        1,
+        payload,
+        observe_sec,
+        FRAME_TYPE_ACK,
+        received_all,
+        payload_type=DATA_TYPE_SET_BOOT_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: DATA stage failed for boot_layer={layer}.")
+        fill_diag(diag, f"DATA stage failed for boot_layer={layer}", received_all)
+        return False
+
+    extra_frames: List[Dict[str, int]] = []
+    t0 = time.time()
+    end_t = t0 + max(0.25, observe_sec)
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        extra_frames.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到额外帧 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+        send_ack_for_peer(h, parsed["seq"])
+
+    ok = not extra_frames
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: boot_layer={layer}, completed START/DATA/ACK flow with no extra reply.")
+        else:
+            print(f"  FAIL: boot_layer={layer}, saw unexpected extra frame(s) after DATA ACK.")
+    if not ok:
+        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for boot_layer={layer}", received_all)
+    return ok
+
+
+def run_set_layer_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_SET_LAYER test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    if KEYMAP_LAYER_COUNT <= 0:
+        if verbose:
+            print("  SKIP: KEYMAP_LAYER_COUNT <= 0")
+        fill_diag(diag, "invalid KEYMAP_LAYER_COUNT", [])
+        return False
+
+    layer = random.randrange(KEYMAP_LAYER_COUNT)
+    payload = bytes([layer])
+    received_all: List[Dict[str, int]] = []
+
+    if not send_start_expect_ack(
+        h,
+        len(payload),
+        observe_sec,
+        received_all,
+        payload_type=DATA_TYPE_SET_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: START stage failed for layer={layer}.")
+        fill_diag(diag, f"START stage failed for layer={layer}", received_all)
+        return False
+
+    if not send_data_expect_type(
+        h,
+        1,
+        payload,
+        observe_sec,
+        FRAME_TYPE_ACK,
+        received_all,
+        payload_type=DATA_TYPE_SET_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: DATA stage failed for layer={layer}.")
+        fill_diag(diag, f"DATA stage failed for layer={layer}", received_all)
+        return False
+
+    extra_frames: List[Dict[str, int]] = []
+    t0 = time.time()
+    end_t = t0 + max(0.25, observe_sec)
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        extra_frames.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到额外帧 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+        send_ack_for_peer(h, parsed["seq"])
+
+    ok = not extra_frames
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: layer={layer}, completed START/DATA/ACK flow with no extra reply.")
+        else:
+            print(f"  FAIL: layer={layer}, saw unexpected extra frame(s) after DATA ACK.")
+    if not ok:
+        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for layer={layer}", received_all)
+    return ok
+
+
+def fetch_zero_len_reply_payload(
+    h: hid.device,
+    observe_sec: float,
+    payload_type_req: int,
+    expected_reply_len: Optional[int] = None,
+    verbose: bool = True,
+) -> Tuple[bool, bytes, List[Dict[str, int]], str]:
+    received_all: List[Dict[str, int]] = []
+    got_control_ack = False
+    got_reply_start = False
+    got_reply_data = False
+    reply_total_len: Optional[int] = None
+    reply_payload = bytearray()
+    seen_data_seq: set[int] = set()
+
+    req = build_frame(
+        seq=0,
+        frame_type=FRAME_TYPE_START,
+        payload_type=payload_type_req,
+        payload_data=struct.pack("<H", 0),
+    )
+    write_frame(h, req)
+
+    t0 = time.time()
+    end_t = t0 + max(2.0, observe_sec * 4.0)
+
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+
+        send_ack_for_peer(h, parsed["seq"])
+
+        payload_len = parsed["payload_len"]
+        payload_type = parsed["payload_type"]
+        payload_data = buf[4 : 4 + payload_len]
+
+        if parsed["type"] == FRAME_TYPE_ACK:
+            got_control_ack = True
+            continue
+
+        if parsed["type"] == FRAME_TYPE_START:
+            if payload_type != payload_type_req:
+                return False, b"", received_all, f"reply START payload_type mismatch: {payload_type}"
+            if payload_len < 2:
+                return False, b"", received_all, f"reply START payload_len invalid: {payload_len}"
+            reply_total_len = struct.unpack_from("<H", payload_data, 0)[0]
+            got_reply_start = True
+            if reply_total_len == 0:
+                got_reply_data = True
+                break
+            continue
+
+        if parsed["type"] == FRAME_TYPE_DATA:
+            if payload_type != payload_type_req:
+                return False, b"", received_all, f"reply DATA payload_type mismatch: {payload_type}"
+            if parsed["seq"] not in seen_data_seq:
+                seen_data_seq.add(parsed["seq"])
+                reply_payload.extend(payload_data)
+            if reply_total_len is not None and len(reply_payload) >= reply_total_len:
+                got_reply_data = True
+                break
+
+    if not got_control_ack:
+        return False, b"", received_all, "query START was not ACKed"
+    if not got_reply_start:
+        return False, b"", received_all, "reply START was not received"
+    if not got_reply_data:
+        return False, b"", received_all, "reply DATA was not fully received"
+    if reply_total_len is None:
+        return False, b"", received_all, "reply_total_len is unknown"
+    if len(reply_payload) != reply_total_len:
+        return False, b"", received_all, f"reply length mismatch: data_len={len(reply_payload)}, total_len={reply_total_len}"
+    if expected_reply_len is not None and reply_total_len != expected_reply_len:
+        return False, b"", received_all, f"reply_total_len={reply_total_len}, expected={expected_reply_len}"
+
+    return True, bytes(reply_payload), received_all, ""
+
+
+def send_chunked_set_request_expect_ack_only(
+    h: hid.device,
+    observe_sec: float,
+    payload_type_req: int,
+    request_payload: bytes,
+    verbose: bool = True,
+) -> Tuple[bool, List[Dict[str, int]], str]:
+    received_all: List[Dict[str, int]] = []
+    request_len = len(request_payload)
+
+    if not send_start_expect_ack(
+        h,
+        request_len,
+        observe_sec,
+        received_all,
+        payload_type=payload_type_req,
+    ):
+        return False, received_all, "request START was not ACKed"
+
+    if request_len > 0:
+        chunks = chunk_payload(request_payload, MAX_DATA_PAYLOAD)
+        for idx, part in enumerate(chunks):
+            seq = idx + 1
+            if not send_data_expect_type(
+                h,
+                seq,
+                part,
+                observe_sec,
+                FRAME_TYPE_ACK,
+                received_all,
+                payload_type=payload_type_req,
+            ):
+                return False, received_all, f"request DATA(seq={seq}) did not receive expected ACK"
+
+    t0 = time.time()
+    end_t = t0 + max(0.25, observe_sec)
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        send_ack_for_peer(h, parsed["seq"])
+
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到额外帧 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+
+        if parsed["type"] in (FRAME_TYPE_START, FRAME_TYPE_DATA):
+            return False, received_all, "unexpected business reply frame after set request"
+
+    return True, received_all, ""
+
+
+def _mutate_payload_bytes(data: bytes, salt: int = 0x5A) -> bytes:
+    if not data:
+        return data
+
+    out = bytearray(data)
+    step = max(1, len(out) // 16)
+    for i in range(0, len(out), step):
+        mask = (salt + i) & 0xFF
+        if mask == 0:
+            mask = 0xA5
+        out[i] ^= mask
+
+    if bytes(out) == data:
+        out[0] ^= 0xFF
+
+    return bytes(out)
+
+
+def run_set_layer_keymap_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_SET_LAYER_KEYMAP test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    ok, original_payload, received, reason = fetch_zero_len_reply_payload(
+        h,
+        observe_sec,
+        DATA_TYPE_GET_LAYER_KEYMAP,
+        expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: pre-read current layer failed: {reason}")
+        fill_diag(diag, f"pre-read current layer failed: {reason}", received)
+        return False
+
+    test_payload = _mutate_payload_bytes(original_payload, salt=0x31)
+
+    ok, received, reason = send_chunked_set_request_expect_ack_only(
+        h,
+        observe_sec,
+        DATA_TYPE_SET_LAYER_KEYMAP,
+        test_payload,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: set current layer failed: {reason}")
+        fill_diag(diag, f"set current layer failed: {reason}", received)
+        return False
+
+    ok, verify_payload, received, reason = fetch_zero_len_reply_payload(
+        h,
+        observe_sec,
+        DATA_TYPE_GET_LAYER_KEYMAP,
+        expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: verify current layer failed: {reason}")
+        fill_diag(diag, f"verify current layer failed: {reason}", received)
+        return False
+    if verify_payload != test_payload:
+        if verbose:
+            print_summary(received, name)
+            print("  FAIL: readback mismatch after SET_LAYER_KEYMAP.")
+        fill_diag(diag, "readback mismatch after SET_LAYER_KEYMAP", received)
+        return False
+
+    ok, received, reason = send_chunked_set_request_expect_ack_only(
+        h,
+        observe_sec,
+        DATA_TYPE_SET_LAYER_KEYMAP,
+        original_payload,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: restore current layer failed: {reason}")
+        fill_diag(diag, f"restore current layer failed: {reason}", received)
+        return False
+
+    ok, restored_payload, received, reason = fetch_zero_len_reply_payload(
+        h,
+        observe_sec,
+        DATA_TYPE_GET_LAYER_KEYMAP,
+        expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: verify restore current layer failed: {reason}")
+        fill_diag(diag, f"verify restore current layer failed: {reason}", received)
+        return False
+    if restored_payload != original_payload:
+        if verbose:
+            print_summary(received, name)
+            print("  FAIL: restore mismatch after SET_LAYER_KEYMAP.")
+        fill_diag(diag, "restore mismatch after SET_LAYER_KEYMAP", received)
+        return False
+
+    if verbose:
+        print("  PASS: current layer write/readback and restore all succeeded.")
+    return True
+
+
+def run_set_all_layer_keymap_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_SET_ALL_LAYER_KEYMAP test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    ok, original_payload, received, reason = fetch_zero_len_reply_payload(
+        h,
+        observe_sec,
+        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
+        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: pre-read all layers failed: {reason}")
+        fill_diag(diag, f"pre-read all layers failed: {reason}", received)
+        return False
+
+    test_payload = _mutate_payload_bytes(original_payload, salt=0x47)
+
+    ok, received, reason = send_chunked_set_request_expect_ack_only(
+        h,
+        observe_sec,
+        DATA_TYPE_SET_ALL_LAYER_KEYMAP,
+        test_payload,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: set all layers failed: {reason}")
+        fill_diag(diag, f"set all layers failed: {reason}", received)
+        return False
+
+    ok, verify_payload, received, reason = fetch_zero_len_reply_payload(
+        h,
+        observe_sec,
+        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
+        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: verify all layers failed: {reason}")
+        fill_diag(diag, f"verify all layers failed: {reason}", received)
+        return False
+    if verify_payload != test_payload:
+        if verbose:
+            print_summary(received, name)
+            print("  FAIL: readback mismatch after SET_ALL_LAYER_KEYMAP.")
+        fill_diag(diag, "readback mismatch after SET_ALL_LAYER_KEYMAP", received)
+        return False
+
+    ok, received, reason = send_chunked_set_request_expect_ack_only(
+        h,
+        observe_sec,
+        DATA_TYPE_SET_ALL_LAYER_KEYMAP,
+        original_payload,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: restore all layers failed: {reason}")
+        fill_diag(diag, f"restore all layers failed: {reason}", received)
+        return False
+
+    ok, restored_payload, received, reason = fetch_zero_len_reply_payload(
+        h,
+        observe_sec,
+        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
+        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
+        verbose=verbose,
+    )
+    if not ok:
+        if verbose:
+            print_summary(received, name)
+            print(f"  FAIL: verify restore all layers failed: {reason}")
+        fill_diag(diag, f"verify restore all layers failed: {reason}", received)
+        return False
+    if restored_payload != original_payload:
+        if verbose:
+            print_summary(received, name)
+            print("  FAIL: restore mismatch after SET_ALL_LAYER_KEYMAP.")
+        fill_diag(diag, "restore mismatch after SET_ALL_LAYER_KEYMAP", received)
+        return False
+
+    if verbose:
+        print("  PASS: all-layer write/readback and restore all succeeded.")
+    return True
+
+
 def _build_stress_query_request_payload(payload_type: int, length: int = STRESS_QUERY_REQUEST_LEN) -> bytes:
     if length <= 0:
         return b""
@@ -1157,22 +1710,36 @@ def run_continuous_stress_test(
         ),
         (
             "SET_LAYER",
-            lambda d: run_zero_len_request_expect_ack_only(
+            lambda d: run_set_layer_test(
                 h,
                 observe_sec,
-                DATA_TYPE_SET_LAYER,
-                "DATA_TYPE_SET_LAYER test",
                 verbose=False,
                 diag=d,
             ),
         ),
         (
             "SET_LAYER_KEYMAP",
-            lambda d: run_zero_len_request_expect_ack_only(
+            lambda d: run_set_layer_keymap_test(
                 h,
                 observe_sec,
-                DATA_TYPE_SET_LAYER_KEYMAP,
-                "DATA_TYPE_SET_LAYER_KEYMAP test",
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
+            "SET_ALL_LAYER_KEYMAP",
+            lambda d: run_set_all_layer_keymap_test(
+                h,
+                observe_sec,
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
+            "SET_BOOT_LAYER",
+            lambda d: run_set_boot_layer_test(
+                h,
+                observe_sec,
                 verbose=False,
                 diag=d,
             ),
@@ -1246,7 +1813,17 @@ def main() -> int:
         default=20,
         help="Print stress progress every N rounds (default: 20)",
     )
+    parser.add_argument(
+        "--case",
+        type=str,
+        choices=SINGLE_CASE_CHOICES,
+        default=None,
+        help="Run only one non-stress test case",
+    )
     args = parser.parse_args()
+
+    if args.case is not None and args.stress_rounds > 0:
+        parser.error("--case cannot be used together with --stress-rounds")
 
     try:
         h = open_device(args.vid, args.pid, args.path)
@@ -1268,16 +1845,17 @@ def main() -> int:
                     )
                 ]
             else:
-                suites = [
-                    ("normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
-                    ("normal receive test (multi DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
-                    ("bad CRC test (single DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
-                    ("bad CRC test (multi DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
-                    ("single-session test (single DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=False)),
-                    ("single-session test (multi DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=True)),
-                    ("interrupt old-data continuation should fail", lambda: run_interrupted_old_data_should_fail_test(h, args.observe_sec)),
-                    ("DATA_TYPE_GET_KEY test", lambda: run_get_key_test(h, args.observe_sec)),
+                case_entries = [
+                    ("normal-single", "normal receive test (single DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=False)),
+                    ("normal-multi", "normal receive test (multi DATA)", lambda: run_normal_flow_test(h, args.observe_sec, multi_data=True)),
+                    ("bad-crc-single", "bad CRC test (single DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=False)),
+                    ("bad-crc-multi", "bad CRC test (multi DATA)", lambda: run_bad_crc_flow_test(h, args.observe_sec, multi_data=True)),
+                    ("session-single", "single-session test (single DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=False)),
+                    ("session-multi", "single-session test (multi DATA)", lambda: run_session_restart_test(h, args.observe_sec, multi_data=True)),
+                    ("interrupt-old-data", "interrupt old-data continuation should fail", lambda: run_interrupted_old_data_should_fail_test(h, args.observe_sec)),
+                    ("get-key", "DATA_TYPE_GET_KEY test", lambda: run_get_key_test(h, args.observe_sec)),
                     (
+                        "get-layer-keymap",
                         "DATA_TYPE_GET_LAYER_KEYMAP test",
                         lambda: run_zero_len_request_expect_reply(
                             h,
@@ -1288,6 +1866,7 @@ def main() -> int:
                         ),
                     ),
                     (
+                        "get-all-layer-keymap",
                         "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
                         lambda: run_zero_len_request_expect_reply(
                             h,
@@ -1298,24 +1877,41 @@ def main() -> int:
                         ),
                     ),
                     (
+                        "set-layer",
                         "DATA_TYPE_SET_LAYER test",
-                        lambda: run_zero_len_request_expect_ack_only(
+                        lambda: run_set_layer_test(
                             h,
                             args.observe_sec,
-                            DATA_TYPE_SET_LAYER,
-                            "DATA_TYPE_SET_LAYER test",
                         ),
                     ),
                     (
+                        "set-layer-keymap",
                         "DATA_TYPE_SET_LAYER_KEYMAP test",
-                        lambda: run_zero_len_request_expect_ack_only(
+                        lambda: run_set_layer_keymap_test(
                             h,
                             args.observe_sec,
-                            DATA_TYPE_SET_LAYER_KEYMAP,
-                            "DATA_TYPE_SET_LAYER_KEYMAP test",
+                        ),
+                    ),
+                    (
+                        "set-all-layer-keymap",
+                        "DATA_TYPE_SET_ALL_LAYER_KEYMAP test",
+                        lambda: run_set_all_layer_keymap_test(
+                            h,
+                            args.observe_sec,
+                        ),
+                    ),
+                    (
+                        "set-boot-layer",
+                        "DATA_TYPE_SET_BOOT_LAYER test",
+                        lambda: run_set_boot_layer_test(
+                            h,
+                            args.observe_sec,
                         ),
                     ),
                 ]
+                if args.case is not None:
+                    case_entries = [entry for entry in case_entries if entry[0] == args.case]
+                suites = [(name, fn) for _, name, fn in case_entries]
 
             for name, fn in suites:
                 ok = fn()
