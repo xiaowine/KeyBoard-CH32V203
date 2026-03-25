@@ -41,7 +41,7 @@ static uint8_t keymap_loader_write_flash_range(const uint32_t data_offset, const
     memcpy(shadow_bytes, &_config_lma[aligned_start], aligned_len);
     memcpy(shadow_bytes + patch_offset, data, data_len);
 
-    const uint32_t target_addr = (uint32_t)&_config_lma[aligned_start];
+    const uint32_t target_addr = FLASH_BASE + (uint32_t)&_config_lma[aligned_start];
 
     FLASH_Status status = FLASH_ROM_ERASE(target_addr, aligned_len);
     if (status != FLASH_COMPLETE)
@@ -120,7 +120,7 @@ void keymap_loader_load_layer(const uint8_t layer)
 uint8_t keymap_loader_write_boot_config(const KeymapBootConfig* config)
 {
     uint32_t page_words[KEYMAP_CONFIG_PAGE_BYTES / sizeof(uint32_t)] = {0};
-    const uint32_t config_addr = (uint32_t)&_config_lma[0];
+    const uint32_t config_addr = FLASH_BASE + (uint32_t)&_config_lma[0];
     KeymapBootConfig flash_config = {0};
 
     if (config == NULL)
@@ -188,7 +188,7 @@ uint8_t keymap_loader_write_layer(const uint8_t layer, const uint8_t* layer_data
 
 uint8_t keymap_loader_write_all_layers(const uint8_t* layers_data, const uint16_t layers_data_len)
 {
-    const uint32_t all_layers_size = (uint32_t)LAYER_SIZE * (uint32_t)KEYMAP_LAYERS;
+    const uint32_t all_layers_size = (uint32_t)LAYER_SIZE * (KEYMAP_LAYERS);
     const int active_layer = keymap_boot_config_ram.bits.boot_layer;
 
     if ((uint32_t)layers_data_len != all_layers_size)

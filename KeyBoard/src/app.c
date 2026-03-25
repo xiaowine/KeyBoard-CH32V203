@@ -287,7 +287,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t *payload, co
     case DATA_TYPE_SET_LAYER_KEYMAP:
     {
         const int active_layer = keymap_boot_config_ram.bits.boot_layer;
-        const uint16_t layer_size = (uint16_t)(sizeof(KeyMapping) * KEY_TOTAL_KEYS);
+        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
 
         if ((active_layer < 0) || (active_layer >= KEYMAP_LAYERS))
         {
@@ -310,7 +310,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t *payload, co
     }
     case DATA_TYPE_SET_ALL_LAYER_KEYMAP:
     {
-        const uint16_t all_layers_size = (uint16_t)(sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS);
+        const uint16_t all_layers_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS;
 
         if (payload_len != all_layers_size)
         {
