@@ -40,3 +40,10 @@ uint32_t get_bit_index(uint32_t v)
 
     return DeBruijnTable[index];
 }
+
+
+inline uint8_t scale8_by_255(const uint8_t value, const uint8_t scale)
+{
+    const uint16_t t = (uint16_t)value * (uint16_t)scale;
+    return (uint8_t)((t + (t >> 8) + 1U) >> 8);
+}

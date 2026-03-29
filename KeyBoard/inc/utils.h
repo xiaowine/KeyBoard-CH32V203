@@ -18,5 +18,6 @@ else if ((var) < (lo))         \
 } while (0)
 
 uint32_t get_bit_index(uint32_t v);
+uint8_t scale8_by_255(uint8_t value, uint8_t scale);
 
 #endif

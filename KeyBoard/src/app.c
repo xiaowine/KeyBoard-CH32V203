@@ -8,6 +8,7 @@
 #include "usb_desc.h"
 #include "keymap.h"
 #include "keymap_loader.h"
+#include "rgb_led.h"
 
 volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
 uint8_t last_snapshot[HC165_COUNT];
@@ -37,11 +38,11 @@ void app_init(void)
     /* 键盘模块初始化：配置 SPI + DMA 以读取 74HC165 */
     key_init();
 
+    // RGB 初始化
+    rgb_led_init();
     // TIM 初始化
     {
-        // TIM3
-
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM3, ENABLE);
+        RCC_APB2PeriphClockCmd(KEYSCAN_TIM_RCC, ENABLE);
 
         // 设置定时器基准频率为 30kHz（用于分频得到 3kHz 扫描中断）
         const uint16_t tick_freq = 30000U;
@@ -66,37 +67,19 @@ void app_init(void)
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
 
-        TIM_TimeBaseInit(TIM3, &TIM_TimeBaseInitStructure);
-        TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
+        TIM_TimeBaseInit(KEYSCAN_TIM, &TIM_TimeBaseInitStructure);
+        TIM_ClearITPendingBit(KEYSCAN_TIM, TIM_IT_Update);
 
         NVIC_InitTypeDef NVIC_InitStructure;
-        NVIC_InitStructure.NVIC_IRQChannel = TIM3_IRQn;
+        NVIC_InitStructure.NVIC_IRQChannel = KEYSCAN_TIM_IRQn;
         NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
         NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
         NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
         NVIC_Init(&NVIC_InitStructure);
-        TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
-        TIM_Cmd(TIM3, ENABLE);
+        TIM_ITConfig(KEYSCAN_TIM, TIM_IT_Update, ENABLE);
+        TIM_Cmd(KEYSCAN_TIM, ENABLE);
 
-        // TIM2
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
-
-        TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
-        TIM_TimeBaseInitStructure.TIM_Period = 4999;
-        TIM_TimeBaseInitStructure.TIM_ClockDivision = TIM_CKD_DIV1;
-        TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
-        TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
-
-        TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStructure);
-        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-
-        NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
-        NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
-        NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
-        NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
-        NVIC_Init(&NVIC_InitStructure);
-        TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
-        TIM_Cmd(TIM2, ENABLE);
+        // TIM2 已移除：改用 TIM1 的中断来产生额外的 5ms 定时标志
     }
     Set_USB_Clock();
     USB_Init();
@@ -126,13 +109,13 @@ void app_run(void)
             next_sample_slot = (active_sample_slot + 1) % KEY_SAMPLE_WINDOW;
             key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
-            TIM_Cmd(TIM3, ENABLE);
+            TIM_Cmd(KEYSCAN_TIM, ENABLE);
         }
         else if (scan_timeout_ticks >= KEY_SCAN_TIMEOUT_TICKS)
         {
             key_scan_state = KEY_STATE_IDLE;
             scan_timeout_ticks = 0;
-            TIM_Cmd(TIM3, ENABLE);
+            TIM_Cmd(KEYSCAN_TIM, ENABLE);
             PRINT("Key scan timeout, recovery\r\n");
         }
         break;
@@ -152,34 +135,33 @@ void app_run(void)
     }
 }
 
-RAM INTF void TIM3_IRQHandler(void)
+RAM INTF void KEYSCAN_TIM_IRQHANDLER(void)
 {
-    if (TIM_GetITStatus(TIM3, TIM_IT_Update) == SET)
+    if (TIM_GetITStatus(KEYSCAN_TIM, TIM_IT_Update) == SET)
     {
         time1ms_tick = 1;
+        // 由 TIM1 额外产生 5ms 标志（每 5 个 update 触发一次）
+        static uint8_t tick5ms_counter = 0;
+        tick5ms_counter++;
+        if (tick5ms_counter >= 5)
+        {
+            time5ms_tick = 1;
+            tick5ms_counter = 0;
+        }
         /* 如果当前空闲，启动新的扫描 */
         if (key_scan_state == KEY_STATE_IDLE)
         {
             key_scan_state = KEY_STATE_SCANNING;
             active_sample_slot = next_sample_slot;
             scan_timeout_ticks = 0;
-            TIM_Cmd(TIM3, DISABLE);
+            TIM_Cmd(KEYSCAN_TIM, DISABLE);
             key_start_scan();
         }
         else if (scan_timeout_ticks < 0xFF)
         {
             scan_timeout_ticks++;
         }
-        TIM_ClearITPendingBit(TIM3, TIM_IT_Update);
-    }
-}
-
-RAM INTF void TIM2_IRQHandler(void)
-{
-    if (TIM_GetITStatus(TIM2, TIM_IT_Update) == SET)
-    {
-        time5ms_tick = 1;
-        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
+        TIM_ClearITPendingBit(KEYSCAN_TIM, TIM_IT_Update);
     }
 }
 

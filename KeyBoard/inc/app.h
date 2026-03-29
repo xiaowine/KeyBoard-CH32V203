@@ -3,6 +3,12 @@
 
 #define KEYBOARD_SCAN_FREQUENCY_HZ 3000U
 
+/* 定时器命名统一 (键盘扫描定时器) */
+#define KEYSCAN_TIM TIM1
+#define KEYSCAN_TIM_RCC RCC_APB2Periph_TIM1
+#define KEYSCAN_TIM_IRQn TIM1_UP_IRQn
+#define KEYSCAN_TIM_IRQHANDLER TIM1_UP_IRQHandler
+
 /* 键盘扫描状态机 */
 typedef enum
 {
