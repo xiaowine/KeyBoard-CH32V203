@@ -27,7 +27,7 @@
 #define KEY_TOTAL_KEYS (HC165_COUNT * 8)
 #define KEY_SAMPLE_WINDOW 3
 #define KEY_DEBOUNCE_CONFIRM_COUNT 2
-/* 扫描超时保护（单位：TIM3 update tick） */
+/* 扫描超时保护 */
 #define KEY_SCAN_TIMEOUT_TICKS 6U
 
 /* 按键消抖状态 */

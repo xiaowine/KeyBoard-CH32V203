@@ -6,6 +6,7 @@
 
 void encode_init(void)
 {
+    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB, ENABLE);
     RCC_APB1PeriphClockCmd(ENCODE_TIM_RCC, ENABLE);
 
     GPIO_InitTypeDef GPIO_InitStructure = {0};

@@ -9,8 +9,8 @@ static volatile uint8_t dma_transfer_complete_flag = 0;
 
 /* 3kHz 采样与过滤管理 */
 static uint8_t key_sample_buffer[KEY_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
-static uint8_t key_filtered_state[HC165_COUNT];                   /* 1ms 多数投票结果 */
-static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS];         /* 每键状态跟踪 */
+static uint8_t key_filtered_state[HC165_COUNT]; /* 1ms 多数投票结果 */
+static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS]; /* 每键状态跟踪 */
 
 void key_init(void)
 {
@@ -34,7 +34,7 @@ void key_init(void)
     RCC_APB2PeriphClockCmd(KEY_SPI_RCC, ENABLE);
 
     SPI_InitTypeDef SPI_InitStructure = {0};
-    SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
+    SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_RxOnly;
     SPI_InitStructure.SPI_Mode = SPI_Mode_Master;
     SPI_InitStructure.SPI_DataSize = SPI_DataSize_8b;
     SPI_InitStructure.SPI_CPOL = SPI_CPOL_Low;
@@ -62,11 +62,11 @@ void key_init(void)
     DMA_InitStructure.DMA_M2M = DMA_M2M_Disable;
     DMA_Init(DMA1_Channel2, &DMA_InitStructure);
 
-    static uint8_t dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
-    DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)dummy_tx;
-    DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
-    DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable; /* 发送固定值 */
-    DMA_Init(DMA1_Channel3, &DMA_InitStructure);
+    // static uint8_t dummy_tx[HC165_COUNT] = {0xFF, 0xFF, 0xFF};
+    // DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)dummy_tx;
+    // DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralDST;
+    // DMA_InitStructure.DMA_MemoryInc = DMA_MemoryInc_Disable; /* 发送固定值 */
+    // DMA_Init(DMA1_Channel3, &DMA_InitStructure);
 
     DMA_ITConfig(DMA1_Channel2, DMA_IT_TC, ENABLE);
 
@@ -79,7 +79,7 @@ void key_init(void)
     NVIC_Init(&NVIC_DMA_InitStructure);
 
     SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Rx, ENABLE);
-    SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Tx, ENABLE);
+    // SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Tx, ENABLE);
     SPI_Cmd(KEY_SPI, ENABLE);
 }
 
@@ -95,17 +95,20 @@ void key_copy_snapshot(uint8_t dest[HC165_COUNT])
 
 void key_start_scan(void)
 {
-    DMA_Cmd(DMA1_Channel2, DISABLE); /* RX（接收）*/
-    DMA_Cmd(DMA1_Channel3, DISABLE); /* TX（发送）*/
+    DMA_Cmd(DMA1_Channel2, DISABLE);
+    SPI_Cmd(KEY_SPI, DISABLE);
 
-    /* 启动新传输前清除任何挂起的 TC 标志 */
+    // 清除 SPI 的接收缓冲区和状态位（非常重要！）
+    // 读两次 DR 寄存器，并清除 OVR 溢出标志
+    (void)KEY_SPI->DATAR;
+    (void)KEY_SPI->DATAR;
+    SPI_I2S_ClearFlag(KEY_SPI, SPI_I2S_FLAG_OVR);
+
     DMA_ClearITPendingBit(DMA1_IT_TC2);
     dma_transfer_complete_flag = 0;
 
     DMA_SetCurrDataCounter(DMA1_Channel2, HC165_COUNT);
-    DMA_SetCurrDataCounter(DMA1_Channel3, HC165_COUNT);
 
-    // static uint8_t data[HC165_COUNT];
     /*
      * 74HC165 时序：
      * - 保持 CE 为高（时钟禁止）同时通过 PL (/CS) 加载并行输入。
@@ -114,14 +117,11 @@ void key_start_scan(void)
      */
 
     KEY_DISABLE_CLOCK(); /* 禁止时钟 */
-    KEY_LOAD_PL();       /* 加载并行输入 */
-    KEY_ENABLE_CLOCK();  /* 启用时钟 */
-
-    //  开启 DMA，开始传输
+    KEY_LOAD_PL(); /* 加载并行输入 */
+    KEY_ENABLE_CLOCK(); /* 启用时钟 */
     DMA_Cmd(DMA1_Channel2, ENABLE);
-    DMA_Cmd(DMA1_Channel3, ENABLE);
+    SPI_Cmd(KEY_SPI, ENABLE);
 }
-
 
 /**
  * @brief 将本次采样存入指定槽位
@@ -159,11 +159,11 @@ void key_do_filter_and_update(void)
     /* 更新每键的四态状态机（连续 2 次确认转移） */
     for (uint8_t key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
     {
-        const uint8_t byte_idx = key_idx >> 3;  /* key_idx / 8 */
+        const uint8_t byte_idx = key_idx >> 3; /* key_idx / 8 */
         const uint8_t bit_idx = key_idx & 0x07; /* key_idx % 8 */
         const uint8_t key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
 
-        key_debounce_t *state = &key_debounce_state[key_idx];
+        key_debounce_t* state = &key_debounce_state[key_idx];
 
         switch (state->state)
         {
@@ -224,8 +224,10 @@ INTF void DMA1_Channel2_IRQHandler(void)
     if (DMA_GetITStatus(DMA1_IT_TC2))
     {
         DMA_ClearITPendingBit(DMA1_IT_TC2);
+
+        // 必须立即关闭 SPI，否则时钟停不下来，会多读数据
+        SPI_Cmd(KEY_SPI, DISABLE);
         DMA_Cmd(DMA1_Channel2, DISABLE);
-        DMA_Cmd(DMA1_Channel3, DISABLE);
         /* 将接收的数据拷贝到模块快照 */
         memcpy(hc165_snapshot, spi_dma_rx_buf, HC165_COUNT);
         dma_transfer_complete_flag = 1;
