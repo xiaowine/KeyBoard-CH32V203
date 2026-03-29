@@ -2,11 +2,13 @@
 #define KEYBOARD_KEY_H
 #include "debug.h"
 
-#define KEY_CE GPIO_Pin_3   // 连接到74HC165的CE 时钟使能
-#define KEY_PL GPIO_Pin_4   // 连接到74HC165的PL 负载载入
+#define KEY_PL GPIO_Pin_3   // 连接到74HC165的PL 负载载入
+#define KEY_CE GPIO_Pin_4   // 连接到74HC165的CE 时钟使能
 #define KEY_CP GPIO_Pin_5   // 连接到74HC165的CP 时钟
 #define KEY_MISO GPIO_Pin_6 // 连接到74HC165的Q7 输出
 #define KEY_PORT GPIOA
+#define KEY_SPI SPI1
+#define KEY_SPI_RCC RCC_APB2Periph_SPI1
 
 #define KEY_DISABLE_CLOCK() GPIO_SetBits(KEY_PORT, KEY_CE)
 #define KEY_ENABLE_CLOCK() GPIO_ResetBits(KEY_PORT, KEY_CE)

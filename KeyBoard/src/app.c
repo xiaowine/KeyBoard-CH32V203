@@ -1,8 +1,6 @@
 #include "app.h"
 
-#include <stdlib.h>
 #include <string.h>
-
 #include "comm_controller.h"
 #include "encode.h"
 #include "key.h"
@@ -12,7 +10,6 @@
 #include "keymap_loader.h"
 
 volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
-volatile uint16_t scan_tick_counter = 0;
 uint8_t last_snapshot[HC165_COUNT];
 uint8_t debug_key_pressed_count = 0;
 uint8_t is_debug_mode = 0;
@@ -24,11 +21,10 @@ volatile uint8_t scan_timeout_ticks = 0;
 volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
 void app_init(void)
 {
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_AFIO, ENABLE);
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
 
@@ -82,9 +78,8 @@ void app_init(void)
         TIM_ITConfig(TIM3, TIM_IT_Update, ENABLE);
         TIM_Cmd(TIM3, ENABLE);
 
-        // TIM4
-
-        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM4, ENABLE);
+        // TIM2
+        RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
 
         TIM_TimeBaseInitStructure.TIM_Prescaler = 143;
         TIM_TimeBaseInitStructure.TIM_Period = 4999;
@@ -92,19 +87,17 @@ void app_init(void)
         TIM_TimeBaseInitStructure.TIM_CounterMode = TIM_CounterMode_Up;
         TIM_TimeBaseInitStructure.TIM_RepetitionCounter = 0;
 
-        TIM_TimeBaseInit(TIM4, &TIM_TimeBaseInitStructure);
-        TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+        TIM_TimeBaseInit(TIM2, &TIM_TimeBaseInitStructure);
+        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
 
-        NVIC_InitStructure.NVIC_IRQChannel = TIM4_IRQn;
+        NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
         NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 0;
         NVIC_InitStructure.NVIC_IRQChannelSubPriority = 2;
         NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
         NVIC_Init(&NVIC_InitStructure);
-        TIM_ITConfig(TIM4, TIM_IT_Update, ENABLE);
-        TIM_Cmd(TIM4, ENABLE);
+        TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+        TIM_Cmd(TIM2, ENABLE);
     }
-
-    GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
     Set_USB_Clock();
     USB_Init();
     USB_Interrupts_Config();
@@ -157,42 +150,12 @@ void app_run(void)
         comm_controller_process();
         time5ms_tick = 0;
     }
-
-    if (scan_tick_counter >= KEYBOARD_SCAN_FREQUENCY_HZ)
-    {
-        if (key_get_debounce_state(2) == KEY_DEBOUNCE_PRESSED)
-        {
-            debug_key_pressed_count = debug_key_pressed_count + 1;
-        }
-        else
-        {
-            debug_key_pressed_count = 0;
-        }
-        scan_tick_counter = 0;
-        if (debug_key_pressed_count >= 2)
-        {
-            if (is_debug_mode)
-            {
-                is_debug_mode = 0;
-                GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, ENABLE);
-                PRINT("Debug mode disabled\r\n");
-            }
-            else
-            {
-                is_debug_mode = 1;
-                GPIO_PinRemapConfig(GPIO_Remap_SWJ_Disable, DISABLE);
-                PRINT("Debug mode enabled\r\n");
-            }
-            debug_key_pressed_count = 0;
-        }
-    }
 }
 
 RAM INTF void TIM3_IRQHandler(void)
 {
     if (TIM_GetITStatus(TIM3, TIM_IT_Update) == SET)
     {
-        scan_tick_counter++;
         time1ms_tick = 1;
         /* 如果当前空闲，启动新的扫描 */
         if (key_scan_state == KEY_STATE_IDLE)
@@ -211,120 +174,120 @@ RAM INTF void TIM3_IRQHandler(void)
     }
 }
 
-RAM INTF void TIM4_IRQHandler(void)
+RAM INTF void TIM2_IRQHandler(void)
 {
-    if (TIM_GetITStatus(TIM4, TIM_IT_Update) == SET)
+    if (TIM_GetITStatus(TIM2, TIM_IT_Update) == SET)
     {
         time5ms_tick = 1;
-        TIM_ClearITPendingBit(TIM4, TIM_IT_Update);
+        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
     }
 }
 
-void app_comm_rx_callback(const uint8_t payload_type, const uint8_t *payload, const uint16_t payload_len)
+void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, const uint16_t payload_len)
 {
     switch (payload_type)
     {
     case DATA_TYPE_GET_KEY:
-    {
-        comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
-        break;
-    }
+        {
+            comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
+            break;
+        }
     case DATA_TYPE_GET_LAYER_KEYMAP:
-    {
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-        /* 发送当前运行时已加载的一层（位于 keymap_active） */
-        comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t *)keymap_active, layer_size);
-        break;
-    }
+        {
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            /* 发送当前运行时已加载的一层（位于 keymap_active） */
+            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)keymap_active, layer_size);
+            break;
+        }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
-    {
-        /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
-        // NOLINTNEXTLINE(*-reserved-identifier)
-        extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-        const uint8_t *flash_base = &_config_lma[0];
-        const uint8_t *layers_src = flash_base + sizeof(KeymapBootConfig);
-        comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
-        break;
-    }
+        {
+            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+            // NOLINTNEXTLINE(*-reserved-identifier)
+            extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            const uint8_t* flash_base = &_config_lma[0];
+            const uint8_t* layers_src = flash_base + sizeof(KeymapBootConfig);
+            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
+            break;
+        }
     case DATA_TYPE_SET_LAYER:
-    {
-        uint8_t layer = 0;
-        if (payload_len < sizeof(layer))
         {
-            return;
+            uint8_t layer = 0;
+            if (payload_len < sizeof(layer))
+            {
+                return;
+            }
+            memcpy(&layer, payload, sizeof(layer));
+            if (layer >= KEYMAP_LAYERS)
+            {
+                return;
+            }
+            keymap_loader_load_layer(layer);
+            break;
         }
-        memcpy(&layer, payload, sizeof(layer));
-        if (layer >= KEYMAP_LAYERS)
-        {
-            return;
-        }
-        keymap_loader_load_layer(layer);
-        break;
-    }
     case DATA_TYPE_SET_BOOT_LAYER:
-    {
-        uint8_t layer = 0;
-        if (payload_len < sizeof(layer))
         {
-            return;
-        }
-        memcpy(&layer, payload, sizeof(layer));
-        if (layer >= KEYMAP_LAYERS)
-        {
-            return;
-        }
-        KeymapBootConfig keymap_boot_config = {0};
+            uint8_t layer = 0;
+            if (payload_len < sizeof(layer))
+            {
+                return;
+            }
+            memcpy(&layer, payload, sizeof(layer));
+            if (layer >= KEYMAP_LAYERS)
+            {
+                return;
+            }
+            KeymapBootConfig keymap_boot_config = {0};
 
-        keymap_loader_read_boot_config(&keymap_boot_config);
-        keymap_boot_config.bits.boot_layer = layer;
-        if (keymap_loader_write_boot_config(&keymap_boot_config))
-        {
-            PRINT("Set boot layer: %u\r\n", (unsigned)layer);
+            keymap_loader_read_boot_config(&keymap_boot_config);
+            keymap_boot_config.bits.boot_layer = layer;
+            if (keymap_loader_write_boot_config(&keymap_boot_config))
+            {
+                PRINT("Set boot layer: %u\r\n", (unsigned)layer);
+            }
+            break;
         }
-        break;
-    }
     case DATA_TYPE_SET_LAYER_KEYMAP:
-    {
-        const int active_layer = keymap_boot_config_ram.bits.boot_layer;
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-
-        if ((active_layer < 0) || (active_layer >= KEYMAP_LAYERS))
         {
-            PRINT("Set layer keymap: no active layer\r\n");
-            return;
-        }
+            const int active_layer = keymap_boot_config_ram.bits.boot_layer;
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
 
-        if (payload_len != layer_size)
-        {
-            PRINT("Set layer keymap: invalid payload length %u, expected %u\r\n",
-                  (unsigned)payload_len, (unsigned)layer_size);
-            return;
-        }
+            if ((active_layer < 0) || (active_layer >= KEYMAP_LAYERS))
+            {
+                PRINT("Set layer keymap: no active layer\r\n");
+                return;
+            }
 
-        if (keymap_loader_write_layer((uint8_t)active_layer, payload, payload_len))
-        {
-            PRINT("Set layer keymap: layer=%u\r\n", (unsigned)active_layer);
+            if (payload_len != layer_size)
+            {
+                PRINT("Set layer keymap: invalid payload length %u, expected %u\r\n",
+                      (unsigned)payload_len, (unsigned)layer_size);
+                return;
+            }
+
+            if (keymap_loader_write_layer((uint8_t)active_layer, payload, payload_len))
+            {
+                PRINT("Set layer keymap: layer=%u\r\n", (unsigned)active_layer);
+            }
+            break;
         }
-        break;
-    }
     case DATA_TYPE_SET_ALL_LAYER_KEYMAP:
-    {
-        const uint16_t all_layers_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS;
-
-        if (payload_len != all_layers_size)
         {
-            PRINT("Set all layer keymap: invalid payload length %u, expected %u\r\n",
-                  (unsigned)payload_len, (unsigned)all_layers_size);
-            return;
-        }
+            const uint16_t all_layers_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS;
 
-        if (keymap_loader_write_all_layers(payload, payload_len))
-        {
-            PRINT("Set all layer keymap: layers=%u\r\n", (unsigned)KEYMAP_LAYERS);
+            if (payload_len != all_layers_size)
+            {
+                PRINT("Set all layer keymap: invalid payload length %u, expected %u\r\n",
+                      (unsigned)payload_len, (unsigned)all_layers_size);
+                return;
+            }
+
+            if (keymap_loader_write_all_layers(payload, payload_len))
+            {
+                PRINT("Set all layer keymap: layers=%u\r\n", (unsigned)KEYMAP_LAYERS);
+            }
+            break;
         }
-        break;
-    }
     default:
         break;
     }

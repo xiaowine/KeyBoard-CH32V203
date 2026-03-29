@@ -227,12 +227,16 @@ def build_frame(
 def parse_frame(buf: bytes) -> Optional[Dict[str, int]]:
     if len(buf) != FRAME_SIZE:
         return None
+    recv_crc = struct.unpack_from("<I", buf, CRC_INPUT_SIZE)[0]
+    calc_crc = stm32_crc32_words_le(buf[:CRC_INPUT_SIZE])
+    if recv_crc != calc_crc:
+        return None
     return {
         "seq": buf[0],
         "type": buf[1],
         "payload_len": buf[2],
         "payload_type": buf[3],
-        "crc": struct.unpack_from("<I", buf, CRC_INPUT_SIZE)[0],
+        "crc": recv_crc,
     }
 
 

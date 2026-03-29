@@ -30,8 +30,8 @@ void key_init(void)
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
     GPIO_Init(KEY_PORT, &GPIO_InitStructure);
 
-    /* SPI+DMA 设置，用于通过 SPI1 读取 74HC165 */
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_SPI1, ENABLE);
+    /* SPI+DMA 设置，用于通过 KEY_SPI 读取 74HC165 */
+    RCC_APB2PeriphClockCmd(KEY_SPI_RCC, ENABLE);
 
     SPI_InitTypeDef SPI_InitStructure = {0};
     SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_FullDuplex;
@@ -43,13 +43,13 @@ void key_init(void)
     SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;
     SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
     SPI_InitStructure.SPI_CRCPolynomial = 0;
-    SPI_Init(SPI1, &SPI_InitStructure);
+    SPI_Init(KEY_SPI, &SPI_InitStructure);
 
     /* SPI DMA 配置 */
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
     DMA_InitTypeDef DMA_InitStructure = {0};
-    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&SPI1->DATAR;
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&KEY_SPI->DATAR;
     DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)spi_dma_rx_buf;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
     DMA_InitStructure.DMA_BufferSize = HC165_COUNT;
@@ -78,9 +78,9 @@ void key_init(void)
     NVIC_DMA_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_DMA_InitStructure);
 
-    SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Rx, ENABLE);
-    SPI_I2S_DMACmd(SPI1, SPI_I2S_DMAReq_Tx, ENABLE);
-    SPI_Cmd(SPI1, ENABLE);
+    SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Rx, ENABLE);
+    SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Tx, ENABLE);
+    SPI_Cmd(KEY_SPI, ENABLE);
 }
 
 uint8_t key_transfer_complete(void)

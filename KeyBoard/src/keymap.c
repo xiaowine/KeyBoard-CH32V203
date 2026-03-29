@@ -36,8 +36,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     // 有些硬件或读取情况下，空闲时返回 0x000000（所有位为 0），
     // 直接取反会导致变成全 1（误判为所有按键被按下）。
     // 若原始值为全 0，则认为没有按下任何键；否则按原逻辑取反。
-    const uint32_t keys = (raw == 0x000000) ? 0 : (~raw & 0x00FFFFFF);
-
+    const uint32_t keys = ~raw & 0x00FFFFFF;
     // 2. 变化检测：如果与上次位掩码相同，跳过处理以节省 CPU/USB
     // 保存原始 keys 到 local 变量，后续位扫描会修改临时变量
     const uint32_t changed = keys ^ prev_keys;

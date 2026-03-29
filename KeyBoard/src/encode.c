@@ -6,7 +6,7 @@
 
 void encode_init(void)
 {
-    RCC_APB1PeriphClockCmd(RCC_APB1Periph_TIM2, ENABLE);
+    RCC_APB1PeriphClockCmd(ENCODE_TIM_RCC, ENABLE);
 
     GPIO_InitTypeDef GPIO_InitStructure = {0};
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
@@ -21,38 +21,38 @@ void encode_init(void)
     TIM_TimeBaseStructure.TIM_Period = 1;
     TIM_TimeBaseStructure.TIM_ClockDivision = TIM_CKD_DIV1;
     TIM_TimeBaseStructure.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(TIM2, &TIM_TimeBaseStructure);
+    TIM_TimeBaseInit(ENCODE_TIM, &TIM_TimeBaseStructure);
 
-    TIM_EncoderInterfaceConfig(TIM2, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
+    TIM_EncoderInterfaceConfig(ENCODE_TIM, TIM_EncoderMode_TI12, TIM_ICPolarity_Rising, TIM_ICPolarity_Rising);
 
     TIM_ICInitTypeDef TIM_ICInitStructure;
     TIM_ICStructInit(&TIM_ICInitStructure);
     TIM_ICInitStructure.TIM_Channel = TIM_Channel_1;
     TIM_ICInitStructure.TIM_ICFilter = 0x7;
-    TIM_ICInit(TIM2, &TIM_ICInitStructure);
+    TIM_ICInit(ENCODE_TIM, &TIM_ICInitStructure);
     TIM_ICInitStructure.TIM_Channel = TIM_Channel_2;
     TIM_ICInitStructure.TIM_ICFilter = 0x7;
-    TIM_ICInit(TIM2, &TIM_ICInitStructure);
+    TIM_ICInit(ENCODE_TIM, &TIM_ICInitStructure);
 
-    TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-    TIM_ITConfig(TIM2, TIM_IT_Update, ENABLE);
+    TIM_ClearITPendingBit(ENCODE_TIM, TIM_IT_Update);
+    TIM_ITConfig(ENCODE_TIM, TIM_IT_Update, ENABLE);
 
     NVIC_InitTypeDef NVIC_InitStructure;
-    NVIC_InitStructure.NVIC_IRQChannel = TIM2_IRQn;
+    NVIC_InitStructure.NVIC_IRQChannel = TIM4_IRQn;
     NVIC_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_InitStructure.NVIC_IRQChannelPreemptionPriority = 3;
     NVIC_InitStructure.NVIC_IRQChannelSubPriority = 1;
     NVIC_Init(&NVIC_InitStructure);
 
-    TIM_Cmd(TIM2, ENABLE);
+    TIM_Cmd(ENCODE_TIM, ENABLE);
 }
 
-INTF void TIM2_IRQHandler(void)
+INTF void TIM4_IRQHandler(void)
 {
-    if (TIM_GetITStatus(TIM2, TIM_IT_Update) != RESET)
+    if (TIM_GetITStatus(ENCODE_TIM, TIM_IT_Update) != RESET)
     {
-        TIM_ClearITPendingBit(TIM2, TIM_IT_Update);
-        if (TIM2->CTLR1 & TIM_DIR)
+        TIM_ClearITPendingBit(ENCODE_TIM, TIM_IT_Update);
+        if (ENCODE_TIM->CTLR1 & TIM_DIR)
         {
             USBD_SendMouseReport(0, 1);
         }
