@@ -22,6 +22,14 @@ volatile uint8_t scan_timeout_ticks = 0;
 volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
+Gradient rgb_gradient = {0};
+static const Color gradient_path[] = {
+    {48, 25, 52},
+    {255, 140, 0},
+    {32, 160, 255},
+    {48, 25, 52}
+};
+
 void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
 void app_init(void)
@@ -40,6 +48,7 @@ void app_init(void)
 
     // RGB 初始化
     rgb_led_init();
+    start_gradient(&rgb_gradient, gradient_path, (uint8_t)(sizeof(gradient_path) / sizeof(gradient_path[0])), 600, 1U);
     // TIM 初始化
     {
         RCC_APB2PeriphClockCmd(KEYSCAN_TIM_RCC, ENABLE);
@@ -131,11 +140,16 @@ void app_run(void)
     if (time5ms_tick)
     {
         comm_controller_process();
+        Color next_color;
+        if (update_gradient(&rgb_gradient, &next_color) != 0U)
+        {
+            rgb_led_set_color(next_color.r, next_color.g, next_color.b);
+        }
         time5ms_tick = 0;
     }
 }
 
-RAM INTF void KEYSCAN_TIM_IRQHANDLER(void)
+RAM INTF void TIM1_UP_IRQHandler(void)
 {
     if (TIM_GetITStatus(KEYSCAN_TIM, TIM_IT_Update) == SET)
     {
