@@ -1,77 +1,111 @@
-name: Build MCU Project
+name: Build with downloaded toolchain
 
 on:
+  workflow_dispatch:
+    inputs:
+      resourceId:
+        description: 'Resource ID to fetch from the API (overrides default)'
+        required: false
+        default: '1993872528621211649'
+      run-on:
+        description: 'Runner to use (e.g. ubuntu-latest or windows-latest)'
+        required: false
+        default: 'ubuntu-latest'
   push:
     branches: [ main ]
-  workflow_dispatch:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs['run-on'] || 'ubuntu-latest' }}
     steps:
-      - name: Checkout code
+      - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Install Build Essentials
+      - name: Fetch toolchain URL
         run: |
+          echo "Fetching toolchain URL from API..."
+          resourceId="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.resourceId || '1993872528621211649' }}"
+          echo "Using resourceId: $resourceId"
+          response=$(curl -s "https://api.mounriver.com/mountriver/api/version/fetchRecentOpenOcdUrl?resourceId=$resourceId")
+          echo "$response" > response.json
+          code=$(echo "$response" | jq -r '.code')
+          if [ "$code" != "0" ]; then
+            echo "API returned non-zero code: $code"; cat response.json; exit 1
+          fi
+          url=$(echo "$response" | jq -r '.result')
+          if [ -z "$url" ] || [ "$url" = "null" ]; then
+            echo "No result URL in response"; cat response.json; exit 1
+          fi
+          echo "TOOLCHAIN_URL=$url" >> $GITHUB_ENV
+
+      - name: Download and extract toolchain
+        run: |
+          set -euo pipefail
+          mkdir -p toolchain-download
+          cd toolchain-download
+          echo "Downloading $TOOLCHAIN_URL"
+          curl -L --fail -o toolchain.tar.xz "$TOOLCHAIN_URL"
+          echo "Extracting toolchain.tar.xz..."
+          tar -xJf toolchain.tar.xz
+          # If a nested .tar exists, extract it too
+          inner_tar=$(find . -maxdepth 2 -type f -name '*.tar' -print -quit || true)
+          if [ -n "$inner_tar" ]; then
+            echo "Found nested tar: $inner_tar - extracting"
+            tar -xf "$inner_tar"
+          fi
+          # Locate the Toolchain directory we need
+          tool_dir=$(find . -type d -path '*/Toolchain/RISC-V Embedded GCC15' -print -quit || true)
+          if [ -z "$tool_dir" ]; then
+            echo "Could not find 'Toolchain/RISC-V Embedded GCC15' inside downloaded archive"; ls -R .; exit 1
+          fi
+          # Compute absolute path in a portable way. Prefer readlink -f, fall back to realpath or python3.
+          if command -v readlink >/dev/null 2>&1; then
+            abs=$(readlink -f "$tool_dir")
+          elif command -v realpath >/dev/null 2>&1; then
+            abs=$(realpath "$tool_dir")
+          else
+            abs=$(python3 -c 'import os,sys;print(os.path.realpath(sys.argv[1]))' "$tool_dir")
+          fi
+          echo "TOOLCHAIN_FOLDER=$abs" >> $GITHUB_ENV
+          echo "Toolchain folder set to: $abs"
+
+      - name: Show resolved toolchain path
+        run: |
+          echo "TOOLCHAIN_FOLDER=$TOOLCHAIN_FOLDER"
+
+      - name: Install build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          echo "Installing build dependencies (cmake, build-essential, jq, xz-utils, tar)..."
+          sudo apt-get update -y
           sudo apt-get install -y --no-install-recommends cmake build-essential jq xz-utils tar pkg-config
           cmake --version
 
-      - name: Cache Toolchain
-        id: cache-mrs
-        uses: actions/cache@v5
-        with:
-          path: ./mrs_toolchain
-          key: mrs-v240-linux-x64
-
-      - name: Download and Extract Toolchain
-        if: steps.cache-mrs.outputs.cache-hit != 'true'
+      - name: Add toolchain bin to PATH
         run: |
-          mkdir -p ./temp_download
-          mkdir -p ./mrs_toolchain
-          
-          echo "Downloading toolchain..."
-          curl -L "https://github.com/xiaowine/xiaowine/releases/download/MounRiverStudio_Linux_X64_V240/MRS_Toolchain_Linux_X64_V240.tar.xz" -o toolchain.tar.xz
-          
-          echo "Extracting .tar.xz..."
-          tar -xJf toolchain.tar.xz -C ./temp_download
-          
-          # 处理嵌套的 .tar 文件
-          INNER_TAR=$(find ./temp_download -name "*.tar" -print -quit)
-          if [ -n "$INNER_TAR" ]; then
-            echo "Extracting nested tar: $INNER_TAR"
-            tar -xf "$INNER_TAR" -C ./temp_download
+          if [ -d "$TOOLCHAIN_FOLDER/bin" ]; then
+            echo "Adding $TOOLCHAIN_FOLDER/bin to PATH"
+            echo "PATH=$TOOLCHAIN_FOLDER/bin:$PATH" >> $GITHUB_ENV
+          else
+            echo "Warning: $TOOLCHAIN_FOLDER/bin not found; CMake may not find the cross compiler"
           fi
-          
-          # 关键步骤：动态寻找包含 'RISC-V Embedded GCC15' 的目录
-          # 我们寻找该目录下是否存在 bin 文件夹
-          TARGET_PATH=$(find ./temp_download -type d -path "*/RISC-V Embedded GCC15" -print -quit)
-          
-          if [ -z "$TARGET_PATH" ]; then
-            echo "Error: Could not find Toolchain directory!"
-            ls -R ./temp_download
-            exit 1
-          fi
-          
-          echo "Found toolchain at: $TARGET_PATH"
-          # 将真正的内容移动到 mrs_toolchain 根目录，方便后续使用
-          cp -r "$TARGET_PATH/." ./mrs_toolchain/
-          rm -rf ./temp_download toolchain.tar.xz
 
-      - name: Configure and Build
+      - name: Configure CMake
         run: |
-          # 关键：将解压后的绝对路径传给环境变量 TOOLCHAIN_FOLDER
-          export TOOLCHAIN_FOLDER=$(pwd)/mrs_toolchain
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DTOOLCHAIN_FOLDER="$TOOLCHAIN_FOLDER"
+
+      - name: Build
+        run: |
           cmake --build build --config Release -j$(nproc)
 
-      - name: Upload Artifacts
+      - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ github.event.repository.name }}-build
+          name: build-artifacts
           path: |
-            build/*.elf
-            build/*.hex
-            build/*.bin
-            build/*.map
-            build/*.lst
+            obj/KeyBoard.elf
+            obj/KeyBoard.hex
+
+
+
