@@ -55,12 +55,16 @@ typedef enum
     DATA_TYPE_GET_KEY = 0b0000,
     /** 读取当前层按键映射。 */
     DATA_TYPE_GET_LAYER_KEYMAP = 0b0010,
-    /** 设置当前层。 */
-    DATA_TYPE_SET_LAYER = 0b0001,
+    /** 设置当前层。(index) */
+    DATA_TYPE_SET_KEYMAP_LAYER = 0b0001,
+    /** 设置当前键盘层映射 */
+    DATA_TYPE_SET_KEYMAP = 0b0011,
     /** 设置配置头 */
     DATA_TYPE_SET_HEADER = 0b0111,
-    /** 设置层映射 */
-    DATA_TYPE_SET_LAYER_KEYMAP = 0b0011,
+    /** 设置颜色层。(index) */
+    DATA_TYPE_SET_RGB_COLOR_LAYER = 0b1111,
+    /** 设置当前颜色层 */
+    DATA_TYPE_SET_RGB_COLOR = 0b1001,
 } DATA_TYPE;
 
 /** @brief 发送状态机状态定义。 */

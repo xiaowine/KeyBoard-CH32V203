@@ -43,7 +43,9 @@ SINGLE_CASE_CHOICES = (
     "interrupt-old-data",
     "get-key",
     "get-layer-keymap",
-    "get-all-layer-keymap",
+    "set-header",
+    "set-rgb-color-layer",
+    "set-rgb-color",
     "set-layer",
     "set-layer-keymap",
     "set-all-layer-keymap",
@@ -113,8 +115,14 @@ DATA_TYPE_GET_KEY = _TYPE_VALUES["DATA_TYPE_GET_KEY"]
 DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
 DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
 DATA_TYPE_SET_HEADER = _TYPE_VALUES["DATA_TYPE_SET_HEADER"]
+DATA_TYPE_SET_RGB_COLOR_LAYER = _TYPE_VALUES.get("DATA_TYPE_SET_RGB_COLOR_LAYER", 0x0F)
+DATA_TYPE_SET_RGB_COLOR = _TYPE_VALUES.get("DATA_TYPE_SET_RGB_COLOR", 0x09)
 TRANSPORT_TEST_PAYLOAD_TYPE = DATA_TYPE_SET_LAYER
 GET_KEY_EXPECTED_REPLY_LEN = 3
+
+# Optional override for RGB payloads used by run_set_rgb_color_test.
+# If set to a list of (r,g,b) tuples, the test will send these instead of random colors.
+OVERRIDE_RGB_LIST: Optional[List[Tuple[int, int, int]]] = None
 
 
 def _read_define_u32(text: str, name: str) -> Optional[int]:
@@ -234,6 +242,7 @@ def parse_frame(buf: bytes) -> Optional[Dict[str, int]]:
         "payload_type": buf[3],
         "crc": recv_crc,
     }
+
 
 
 def type_name(frame_type: int) -> str:
@@ -1073,6 +1082,205 @@ def run_set_layer_test(
     return ok
 
 
+def run_set_rgb_color_layer_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_SET_RGB_COLOR_LAYER test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    if KEYMAP_LAYER_COUNT <= 0:
+        if verbose:
+            print("  SKIP: KEYMAP_LAYER_COUNT <= 0")
+        fill_diag(diag, "invalid KEYMAP_LAYER_COUNT", [])
+        return False
+
+    # Color layer is an index similar to normal layer selection
+    color_layer = random.randrange(KEYMAP_LAYER_COUNT)
+    payload = bytes([color_layer])
+    received_all: List[Dict[str, int]] = []
+
+    if not send_start_expect_ack(
+        h,
+        len(payload),
+        observe_sec,
+        received_all,
+        payload_type=DATA_TYPE_SET_RGB_COLOR_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: START stage failed for color_layer={color_layer}.")
+        fill_diag(diag, f"START stage failed for color_layer={color_layer}", received_all)
+        return False
+
+    if not send_data_expect_type(
+        h,
+        1,
+        payload,
+        observe_sec,
+        FRAME_TYPE_ACK,
+        received_all,
+        payload_type=DATA_TYPE_SET_RGB_COLOR_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: DATA stage failed for color_layer={color_layer}.")
+        fill_diag(diag, f"DATA stage failed for color_layer={color_layer}", received_all)
+        return False
+
+    extra_frames: List[Dict[str, int]] = []
+    t0 = time.time()
+    end_t = t0 + max(0.25, observe_sec)
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        extra_frames.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到额外帧 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+        send_ack_for_peer(h, parsed["seq"])
+
+    ok = not extra_frames
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: color_layer={color_layer}, completed START/DATA/ACK flow with no extra reply.")
+        else:
+            print(f"  FAIL: color_layer={color_layer}, saw unexpected extra frame(s) after DATA ACK.")
+    if not ok:
+        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for color_layer={color_layer}", received_all)
+    return ok
+
+
+def run_set_rgb_color_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    """Test DATA_TYPE_SET_RGB_COLOR. Sends a 3-byte RGB payload and expects ACK only.
+
+    Payload format: [R, G, B] (each 0-255)
+    """
+    name = "DATA_TYPE_SET_RGB_COLOR test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    # Choose random RGB values
+    # Determine how many RGB entries are expected per layer (CONFIG_RGB_COLOR_PATH_NUM)
+    root = Path(__file__).resolve().parent.parent
+    config_h = root / "KeyBoard" / "inc" / "config.h"
+    try:
+        config_text = config_h.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        config_text = ""
+    path_num = _read_define_u32(config_text, "CONFIG_RGB_COLOR_PATH_NUM")
+    if path_num is None:
+        # Fallback to 5 as defined in firmware
+        path_num = 5
+
+    # Build payload: path_num entries of RGB triplets
+    triplets: List[int] = []
+    color_list: List[Tuple[int, int, int]] = []
+
+    # If user provided an override list (via CLI), use it
+    if OVERRIDE_RGB_LIST is not None:
+        # If fewer than required, repeat last; if more, truncate
+        use_list = OVERRIDE_RGB_LIST[:]
+        if len(use_list) == 0:
+            return False
+        while len(use_list) < path_num:
+            use_list.append(use_list[-1])
+        use_list = use_list[:path_num]
+        for (r, g, b) in use_list:
+            triplets.extend([r & 0xFF, g & 0xFF, b & 0xFF])
+            color_list.append((r & 0xFF, g & 0xFF, b & 0xFF))
+    else:
+        for _ in range(path_num):
+            r = random.randrange(0, 256)
+            g = random.randrange(0, 256)
+            b = random.randrange(0, 256)
+            triplets.extend([r, g, b])
+            color_list.append((r, g, b))
+    payload = bytes(triplets)
+    received_all: List[Dict[str, int]] = []
+
+    if not send_start_expect_ack(
+        h,
+        len(payload),
+        observe_sec,
+        received_all,
+        payload_type=DATA_TYPE_SET_RGB_COLOR,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: START stage failed for rgb_list={color_list}.")
+        fill_diag(diag, f"START stage failed for rgb_list={color_list}", received_all)
+        return False
+
+    if not send_data_expect_type(
+        h,
+        1,
+        payload,
+        observe_sec,
+        FRAME_TYPE_ACK,
+        received_all,
+        payload_type=DATA_TYPE_SET_RGB_COLOR,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: DATA stage failed for rgb_list={color_list}.")
+        fill_diag(diag, f"DATA stage failed for rgb_list={color_list}", received_all)
+        return False
+
+    # Check no extra business reply frames
+    extra_frames: List[Dict[str, int]] = []
+    t0 = time.time()
+    end_t = t0 + max(0.25, observe_sec)
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        extra_frames.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到额外帧 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+        send_ack_for_peer(h, parsed["seq"])
+
+    ok = not extra_frames
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: rgb_list={color_list}, completed START/DATA/ACK flow with no extra reply.")
+        else:
+            print(f"  FAIL: rgb_list={color_list}, saw unexpected extra frame(s) after DATA ACK.")
+    if not ok:
+        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for rgb_list={color_list}", received_all)
+    return ok
+
+
 def fetch_zero_len_reply_payload(
     h: hid.device,
     observe_sec: float,
@@ -1644,6 +1852,24 @@ def run_continuous_stress_test(
             ),
         ),
         (
+            "SET_RGB_COLOR_LAYER",
+            lambda d: run_set_rgb_color_layer_test(
+                h,
+                observe_sec,
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
+            "SET_RGB_COLOR",
+            lambda d: run_set_rgb_color_test(
+                h,
+                observe_sec,
+                verbose=False,
+                diag=d,
+            ),
+        ),
+        (
             "SET_HEADER",
             lambda d: run_set_header_test(
                 h,
@@ -1728,7 +1954,43 @@ def main() -> int:
         default=None,
         help="Run only one non-stress test case",
     )
+    parser.add_argument(
+        "--rgb-list",
+        type=str,
+        default=None,
+        help="Comma/semicolon separated RGB triplets, e.g. '255,0,0;0,255,0;0,0,255;255,255,255;255,255,0'",
+    )
+    parser.add_argument(
+        "--rgb-preset",
+        type=str,
+        choices=("all-red", "standard"),
+        default=None,
+        help="Use a preset RGB list: 'all-red' or 'standard' (red,green,blue,white,yellow)",
+    )
     args = parser.parse_args()
+
+    # Configure OVERRIDE_RGB_LIST based on CLI arguments
+    global OVERRIDE_RGB_LIST
+    if args.rgb_preset is not None:
+        if args.rgb_preset == "all-red":
+            OVERRIDE_RGB_LIST = [(255, 0, 0)]
+        elif args.rgb_preset == "standard":
+            OVERRIDE_RGB_LIST = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255), (255, 255, 0)]
+    elif args.rgb_list is not None:
+        # parse list like 'r,g,b;...'
+        parts = [p.strip() for p in re.split(r"[;|]", args.rgb_list) if p.strip()]
+        parsed: List[Tuple[int, int, int]] = []
+        for p in parts:
+            nums = [s.strip() for s in p.split(',')]
+            if len(nums) != 3:
+                continue
+            try:
+                r, g, b = (int(nums[0]) & 0xFF, int(nums[1]) & 0xFF, int(nums[2]) & 0xFF)
+            except ValueError:
+                continue
+            parsed.append((r, g, b))
+        if parsed:
+            OVERRIDE_RGB_LIST = parsed
 
     if args.case is not None and args.stress_rounds > 0:
         parser.error("--case cannot be used together with --stress-rounds")
@@ -1777,6 +2039,22 @@ def main() -> int:
                         "set-layer",
                         "DATA_TYPE_SET_LAYER test",
                         lambda: run_set_layer_test(
+                            h,
+                            args.observe_sec,
+                        ),
+                    ),
+                    (
+                        "set-rgb-color-layer",
+                        "DATA_TYPE_SET_RGB_COLOR_LAYER test",
+                        lambda: run_set_rgb_color_layer_test(
+                            h,
+                            args.observe_sec,
+                        ),
+                    ),
+                    (
+                        "set-rgb-color",
+                        "DATA_TYPE_SET_RGB_COLOR test",
+                        lambda: run_set_rgb_color_test(
                             h,
                             args.observe_sec,
                         ),

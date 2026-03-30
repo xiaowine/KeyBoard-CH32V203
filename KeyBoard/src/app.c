@@ -198,23 +198,24 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
     case DATA_TYPE_GET_LAYER_KEYMAP:
         {
             const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
-            /* 发送当前运行时已加载的一层（位于 config_active） */
             comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)active_keymap, layer_size);
             break;
         }
-    case DATA_TYPE_SET_LAYER:
+    case DATA_TYPE_SET_KEYMAP_LAYER:
         {
-            uint8_t layer = 0;
-            if (payload_len < sizeof(layer))
+            const uint8_t index = *payload;
+            if (index >= CONFIG_KEYMAP_LAYERS_NUM)
             {
                 return;
             }
-            memcpy(&layer, payload, sizeof(layer));
-            if (layer >= CONFIG_KEYMAP_LAYERS_NUM)
+            if (config_load_keymap_layer(index))
             {
-                return;
+                PRINT("Set layer config: layer=%u\r\n", (unsigned)index);
             }
-            config_load_keymap_layer(layer);
+            else
+            {
+                PRINT("Set layer config failed: layer=%u\r\n", (unsigned)index);
+            }
             break;
         }
     case DATA_TYPE_SET_HEADER:
@@ -237,26 +238,64 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
 
             break;
         }
-    case DATA_TYPE_SET_LAYER_KEYMAP:
+    case DATA_TYPE_SET_KEYMAP:
         {
             const int active_layer = config_header_ram.bits.boot_layer;
-            const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
-            if ((active_layer < 0) || (active_layer >= CONFIG_KEYMAP_LAYERS_NUM))
-            {
-                PRINT("Set layer config: no active layer\r\n");
-                return;
-            }
-
-            if (payload_len != layer_size)
+            if (payload_len != CONFIG_KEYMAP_LAYER_BYTE)
             {
                 PRINT("Set layer config: invalid payload length %u, expected %u\r\n",
-                      (unsigned)payload_len, (unsigned)layer_size);
+                      (unsigned)payload_len, (unsigned)CONFIG_KEYMAP_LAYER_BYTE);
                 return;
             }
 
             if (config_write_keymap_layer((uint8_t)active_layer, payload, payload_len))
             {
                 PRINT("Set layer config: layer=%u\r\n", (unsigned)active_layer);
+            }
+            else
+            {
+                PRINT("Set layer config failed: layer=%u\r\n", (unsigned)active_layer);
+            }
+            break;
+        }
+    case DATA_TYPE_SET_RGB_COLOR_LAYER:
+        {
+            const uint8_t index = *payload;
+            if (index >= CONFIG_RGB_COLOR_NUM)
+            {
+                return;
+            }
+            if (config_load_rgb_color_layer(*payload))
+            {
+                PRINT("Set RGB color layer: layer=%u\r\n", (unsigned)index);
+            }
+            else
+            {
+                PRINT("Set RGB color layer failed: layer=%u\r\n", (unsigned)index);
+            }
+            break;
+        }
+    case DATA_TYPE_SET_RGB_COLOR:
+        {
+            const uint8_t active_rgb_color_layer = config_header_ram.bits.rgb_color_layer;
+            if (payload_len != CONFIG_RGB_COLOR_LAYER_BYTE)
+            {
+                PRINT("Set color config: invalid payload length %u, expected %u\r\n",
+                      (unsigned)payload_len, (unsigned)CONFIG_RGB_COLOR_LAYER_BYTE);
+                return;
+            }
+            if (config_write_rgb_color_layer(active_rgb_color_layer, payload, payload_len))
+            {
+                PRINT("Set RGB color layer: layer=%u\r\n", (unsigned)active_rgb_color_layer);
+            }
+            else
+            {
+                PRINT("Set RGB color layer failed: layer=%u\r\n", (unsigned)active_rgb_color_layer);
+            }
+            if (config_header_ram.bits.open_rgb_led)
+            {
+                start_Gradient_t(&rgb_Gradient_t, active_rgb_color, sizeof(active_rgb_color) / sizeof(active_rgb_color[0]), 600,
+                                 1U);
             }
             break;
         }
