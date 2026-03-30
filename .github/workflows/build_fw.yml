@@ -24,31 +24,44 @@ jobs:
           path: ./mrs_toolchain
           key: mrs-v240-linux-x64
 
-      - name: Download Toolchain (Mirror)
+      - name: Download and Extract Toolchain
         if: steps.cache-mrs.outputs.cache-hit != 'true'
         run: |
+          mkdir -p ./temp_download
           mkdir -p ./mrs_toolchain
+          
+          echo "Downloading toolchain..."
           curl -L "https://github.com/xiaowine/xiaowine/releases/download/MounRiverStudio_Linux_X64_V240/MRS_Toolchain_Linux_X64_V240.tar.xz" -o toolchain.tar.xz
-          # 解压并去掉一层目录，让 bin 直接在 ./mrs_toolchain 内部
-          tar -xJf toolchain.tar.xz -C ./mrs_toolchain --strip-components=1
-          rm toolchain.tar.xz
+          
+          echo "Extracting .tar.xz..."
+          tar -xJf toolchain.tar.xz -C ./temp_download
+          
+          # 处理嵌套的 .tar 文件
+          INNER_TAR=$(find ./temp_download -name "*.tar" -print -quit)
+          if [ -n "$INNER_TAR" ]; then
+            echo "Extracting nested tar: $INNER_TAR"
+            tar -xf "$INNER_TAR" -C ./temp_download
+          fi
+          
+          # 关键步骤：动态寻找包含 'RISC-V Embedded GCC15' 的目录
+          # 我们寻找该目录下是否存在 bin 文件夹
+          TARGET_PATH=$(find ./temp_download -type d -path "*/RISC-V Embedded GCC15" -print -quit)
+          
+          if [ -z "$TARGET_PATH" ]; then
+            echo "Error: Could not find Toolchain directory!"
+            ls -R ./temp_download
+            exit 1
+          fi
+          
+          echo "Found toolchain at: $TARGET_PATH"
+          # 将真正的内容移动到 mrs_toolchain 根目录，方便后续使用
+          cp -r "$TARGET_PATH/." ./mrs_toolchain/
+          rm -rf ./temp_download toolchain.tar.xz
 
       - name: Configure and Build
         run: |
           # 关键：将解压后的绝对路径传给环境变量 TOOLCHAIN_FOLDER
           export TOOLCHAIN_FOLDER=$(pwd)/mrs_toolchain
-          echo "TOOLCHAIN_FOLDER=$TOOLCHAIN_FOLDER"
-          
-          # 列出 bin 内容并检查文件是否存在与权限
-          ls -la "${TOOLCHAIN_FOLDER}/bin" || true
-          
-          # 明确检查几个可执行文件
-          for f in gcc g++ objcopy objdump; do
-          p="${TOOLCHAIN_FOLDER}/bin/riscv32-wch-elf-$f"
-          echo "checking $p"
-          [ -f "$p" ] && echo "FOUND" || echo "MISSING"
-          [ -x "$p" ] && echo "EXECUTABLE" || echo "NOT EXECUTABLE"
-          done
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j$(nproc)
 
