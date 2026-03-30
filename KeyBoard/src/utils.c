@@ -41,9 +41,20 @@ uint32_t get_bit_index(uint32_t v)
     return DeBruijnTable[index];
 }
 
-
+// 将 value 按照 scale（0-255）进行缩放，结果也在 0-255 范围内。
 inline uint8_t scale8_by_255(const uint8_t value, const uint8_t scale)
 {
     const uint16_t t = (uint16_t)value * (uint16_t)scale;
     return (uint8_t)((t + (t >> 8) + 1U) >> 8);
+}
+
+// 获取 Key_Map_t 结构中有效 codes 的数量
+uint8_t km_get_code_count(const Key_Map_t* m)
+{
+    for (uint8_t i = 0; i < MAX_CODE; ++i)
+    {
+        if (m->codes[i] == 0)
+            return i;
+    }
+    return MAX_CODE;
 }

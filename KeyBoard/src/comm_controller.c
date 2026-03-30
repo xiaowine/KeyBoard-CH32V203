@@ -34,16 +34,16 @@ static void handle_send_ack(void);
 /** @brief 处理发送侧重试溢出。 */
 static void handle_send_retry_overflow(void);
 /** @brief 依据优先级准备下一帧待发送数据。 */
-static uint8_t prepare_next_frame(FrameData *out_frame, TX_SOURCE *out_source);
+static uint8_t prepare_next_frame(Frame_Data_t *out_frame, TX_SOURCE *out_source);
 /** @brief 将完整业务载荷分发给上层回调。 */
 static void dispatch_received_payload(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
 
 /** @brief 接收会话上下文。 */
-static ReceiveHandle receive_handle = {0};
+static Receive_Handle_t receive_handle = {0};
 /** @brief 发送会话上下文。 */
-static SendHandle send_handle = {0};
+static Send_Handle_t send_handle = {0};
 /** @brief 业务回复会话上下文。 */
-static ReplySession reply_session = {0};
+static Reply_Session_t reply_session = {0};
 /** @brief 上层接收回调。 */
 static comm_rx_callback_t rx_callback = NULL;
 
@@ -157,7 +157,7 @@ static void print_received_payload_content(const uint8_t *buf, uint16_t len)
 /** @brief 入队控制帧并触发发送抢占。 */
 static void queue_control_frame(const FRAME_TYPE type)
 {
-    FrameData control_frame = {0};
+    Frame_Data_t control_frame = {0};
 
     /*
      * 单会话策略：
@@ -174,13 +174,13 @@ static void queue_control_frame(const FRAME_TYPE type)
 }
 
 /** @brief 发送一帧数据：补齐 CRC 后通过 USB 端点发出。 */
-static void comm_send(FrameData frame_data)
+static void comm_send(Frame_Data_t frame_data)
 {
     uint32_t words[CRC_WORD_SIZE] = {0};
     memcpy(words, &frame_data, CRC_BYTES_SIZE);
     CRC_ResetDR();
     frame_data.crc = CRC_CalcBlockCRC(words, CRC_WORD_SIZE);
-    USBD_SendCustomData((uint8_t *)&frame_data, sizeof(FrameData));
+    USBD_SendCustomData((uint8_t *)&frame_data, sizeof(Frame_Data_t));
 }
 
 /** @brief 注册上层接收回调。 */
@@ -264,7 +264,7 @@ static void comm_recv_process(void)
     const uint8_t data_cnt = USBD_CustomDataCnt();
     if (data_cnt == DEF_ENDP_SIZE_CUSTOM)
     {
-        FrameData frame_data;
+        Frame_Data_t frame_data;
         const uint8_t *p = USBD_GetCustomData();
         memcpy(&frame_data, p, sizeof(frame_data));
 
@@ -469,7 +469,7 @@ static void comm_recv_process(void)
  * 2. 业务回复 START
  * 3. 业务回复 DATA
  */
-static uint8_t prepare_next_frame(FrameData *out_frame, TX_SOURCE *out_source)
+static uint8_t prepare_next_frame(Frame_Data_t *out_frame, TX_SOURCE *out_source)
 {
     memset(out_frame, 0, sizeof(*out_frame));
     *out_source = TX_SOURCE_NONE;
@@ -638,7 +638,7 @@ static void comm_send_process(void)
     }
 
     {
-        FrameData next_frame;
+        Frame_Data_t next_frame;
         TX_SOURCE next_source = TX_SOURCE_NONE;
         if (!prepare_next_frame(&next_frame, &next_source))
         {

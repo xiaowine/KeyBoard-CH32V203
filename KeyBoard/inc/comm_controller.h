@@ -8,15 +8,15 @@
 /**
  * @brief 参与 CRC 计算的 32 位字数量。
  *
- * 计算范围为 FrameData 结构体中 crc 字段之前的所有字节，并向上按 4 字节对齐。
+ * 计算范围为 Frame_Data_t 结构体中 crc 字段之前的所有字节，并向上按 4 字节对齐。
  */
-#define CRC_WORD_SIZE ((offsetof(FrameData, crc) + 3u) / 4u)
+#define CRC_WORD_SIZE ((offsetof(Frame_Data_t, crc) + 3u) / 4u)
 
 /** @brief 参与 CRC 计算的原始字节数（即 crc 字段之前的长度）。 */
-#define CRC_BYTES_SIZE offsetof(FrameData, crc)
+#define CRC_BYTES_SIZE offsetof(Frame_Data_t, crc)
 
 /** @brief 单帧可携带的有效载荷字节数（不含 payload.type）。 */
-#define FRAME_PAYLOAD_DATA_SIZE (sizeof(((FrameData *)0)->payload.data))
+#define FRAME_PAYLOAD_DATA_SIZE (sizeof(((Frame_Data_t *)0)->payload.data))
 
 /** @brief 收发流程允许的最大重试次数。 */
 #define RETRY_MAX_CNT 10u
@@ -107,7 +107,7 @@ typedef struct PACKED
 
     /** CRC 校验值。 */
     uint32_t crc;
-} FrameData;
+} Frame_Data_t;
 
 /** @brief 当前发送帧的来源，用于 ACK 后推进不同流程。 */
 typedef enum
@@ -150,13 +150,13 @@ typedef struct
     uint16_t received_payload_len;
     /** 接收缓存指针，长度为 expected_payload_len。 */
     uint8_t* payload_buf;
-} ReceiveHandle;
+} Receive_Handle_t;
 
 /** @brief 发送方向上下文。 */
 typedef struct
 {
     /** 最近一次发送/待重发的帧缓存。 */
-    FrameData frame_data;
+    Frame_Data_t frame_data;
     /** 当前发送状态。 */
     SEND_STATUS status;
     /** 记录上一次状态，便于调试。 */
@@ -169,7 +169,7 @@ typedef struct
     uint8_t receive_nack;
     /** 当前帧来源。 */
     TX_SOURCE source;
-} SendHandle;
+} Send_Handle_t;
 
 /** @brief 业务回复会话上下文。 */
 typedef struct
@@ -188,7 +188,7 @@ typedef struct
     uint16_t acked_payload_len;
     /** 回复缓存指针，长度为 payload_len。 */
     uint8_t* payload_buf;
-} ReplySession;
+} Reply_Session_t;
 
 /**
  * @brief 接收业务载荷后的回调函数类型。

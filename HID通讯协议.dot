@@ -22,7 +22,7 @@
 
   subgraph cluster_send {
     label="发送侧（TX）";
-    color="#888888";
+    Color_t="#888888";
     style="rounded";
 
     SEND_IDLE [label="SEND_IDLE\n空闲，等待可发帧"];
@@ -52,7 +52,7 @@
 
   subgraph cluster_receive {
     label="接收侧（RX）";
-    color="#888888";
+    Color_t="#888888";
     style="rounded";
 
     RX_IDLE [label="RX 周期入口"];
@@ -103,7 +103,7 @@
 
   subgraph cluster_rules {
     label="关键约束";
-    color="#BBBBBB";
+    Color_t="#BBBBBB";
     style="rounded,dashed";
 
     RULE1 [label="ACK/NACK 匹配规则\n仅在 SEND_WAIT_RESPONSE 且 seq 相等时有效"];

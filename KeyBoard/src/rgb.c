@@ -1,52 +1,52 @@
-#include "rgb_led.h"
+#include "rgb.h"
 #include "debug.h"
 #include "utils.h"
 
 static uint8_t s_brightness = 80U;
-static Color s_last_rgb = {0U, 0U, 0U};
+static Color_t s_last_rgb = {0U, 0U, 0U};
 static uint16_t s_dma_frame[WS2812_FRAME_LEN] = {0U};
 static volatile uint8_t s_dma_busy = 0U;
 static uint16_t s_period_ticks = 0U;
 static uint16_t s_t0h_ticks = 0U;
 static uint16_t s_t1h_ticks = 0U;
 
-void rgb_led_init(void)
+void rgb_init(void)
 {
     s_period_ticks = (uint16_t)(SystemCoreClock / WS2812_BIT_FREQ_HZ);
     s_t0h_ticks = (uint16_t)(s_period_ticks * 28U / 100U);
     s_t1h_ticks = (uint16_t)(s_period_ticks * 64U / 100U);
 
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA | RCC_APB2Periph_AFIO, ENABLE);
-    RCC_APB1PeriphClockCmd(RGB_LED_TIM_RCC, ENABLE);
+    RCC_APB1PeriphClockCmd(rgb_TIM_RCC, ENABLE);
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
     GPIO_InitTypeDef gpio_init = {0};
-    gpio_init.GPIO_Pin = RGB_LED_PIN;
+    gpio_init.GPIO_Pin = rgb_PIN;
     gpio_init.GPIO_Mode = GPIO_Mode_AF_PP;
     gpio_init.GPIO_Speed = GPIO_Speed_50MHz;
-    GPIO_Init(RGB_LED_PORT, &gpio_init);
+    GPIO_Init(rgb_PORT, &gpio_init);
 
     TIM_TimeBaseInitTypeDef tim_base_init = {0};
     tim_base_init.TIM_Prescaler = 0;
     tim_base_init.TIM_Period = s_period_ticks - 1U;
     tim_base_init.TIM_ClockDivision = TIM_CKD_DIV1;
     tim_base_init.TIM_CounterMode = TIM_CounterMode_Up;
-    TIM_TimeBaseInit(RGB_LED_TIM, &tim_base_init);
+    TIM_TimeBaseInit(rgb_TIM, &tim_base_init);
 
     TIM_OCInitTypeDef tim_oc_init = {0};
     tim_oc_init.TIM_OCMode = TIM_OCMode_PWM1;
     tim_oc_init.TIM_OutputState = TIM_OutputState_Enable;
     tim_oc_init.TIM_Pulse = 0;
     tim_oc_init.TIM_OCPolarity = TIM_OCPolarity_High;
-    TIM_OC2Init(RGB_LED_TIM, &tim_oc_init);
+    TIM_OC2Init(rgb_TIM, &tim_oc_init);
 
-    TIM_OC2PreloadConfig(RGB_LED_TIM, TIM_OCPreload_Enable);
-    TIM_ARRPreloadConfig(RGB_LED_TIM, ENABLE);
+    TIM_OC2PreloadConfig(rgb_TIM, TIM_OCPreload_Enable);
+    TIM_ARRPreloadConfig(rgb_TIM, ENABLE);
 
-    DMA_DeInit(RGB_LED_DMA);
+    DMA_DeInit(rgb_DMA);
 
     DMA_InitTypeDef dma_init = {0};
-    dma_init.DMA_PeripheralBaseAddr = (uint32_t)&RGB_LED_TIM->CH2CVR;
+    dma_init.DMA_PeripheralBaseAddr = (uint32_t)&rgb_TIM->CH2CVR;
     dma_init.DMA_MemoryBaseAddr = (uint32_t)s_dma_frame;
     dma_init.DMA_DIR = DMA_DIR_PeripheralDST;
     dma_init.DMA_BufferSize = WS2812_FRAME_LEN;
@@ -57,9 +57,9 @@ void rgb_led_init(void)
     dma_init.DMA_Mode = DMA_Mode_Normal;
     dma_init.DMA_Priority = DMA_Priority_VeryHigh;
     dma_init.DMA_M2M = DMA_M2M_Disable;
-    DMA_Init(RGB_LED_DMA, &dma_init);
+    DMA_Init(rgb_DMA, &dma_init);
 
-    DMA_ITConfig(RGB_LED_DMA, DMA_IT_TC, ENABLE);
+    DMA_ITConfig(rgb_DMA, DMA_IT_TC, ENABLE);
 
     NVIC_InitTypeDef nvic_dma_init = {0};
     nvic_dma_init.NVIC_IRQChannel = DMA1_Channel3_IRQn;
@@ -68,11 +68,11 @@ void rgb_led_init(void)
     nvic_dma_init.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&nvic_dma_init);
 
-    TIM_SetCompare2(RGB_LED_TIM, 0);
-    rgb_led_set_color(0, 0, 0);
+    TIM_SetCompare2(rgb_TIM, 0);
+    rgb_set_color_t(0, 0, 0);
 }
 
-void rgb_led_build_frame(uint8_t r, uint8_t g, uint8_t b)
+void rgb_build_frame(uint8_t r, uint8_t g, uint8_t b)
 {
     uint8_t i = 0;
     const uint8_t sr = scale8_by_255(r, s_brightness);
@@ -91,7 +91,7 @@ void rgb_led_build_frame(uint8_t r, uint8_t g, uint8_t b)
     }
 }
 
-void rgb_led_set_color(const uint8_t r, const uint8_t g, const uint8_t b)
+void rgb_set_color_t(const uint8_t r, const uint8_t g, const uint8_t b)
 {
     if (s_dma_busy)
     {
@@ -102,37 +102,37 @@ void rgb_led_set_color(const uint8_t r, const uint8_t g, const uint8_t b)
     s_last_rgb.g = g;
     s_last_rgb.b = b;
 
-    rgb_led_build_frame(r, g, b);
+    rgb_build_frame(r, g, b);
     s_dma_busy = 1U;
 
-    DMA_Cmd(RGB_LED_DMA, DISABLE);
+    DMA_Cmd(rgb_DMA, DISABLE);
     DMA_ClearITPendingBit(DMA1_IT_TC3);
-    DMA_SetCurrDataCounter(RGB_LED_DMA, WS2812_FRAME_LEN);
-    DMA_Cmd(RGB_LED_DMA, ENABLE);
+    DMA_SetCurrDataCounter(rgb_DMA, WS2812_FRAME_LEN);
+    DMA_Cmd(rgb_DMA, ENABLE);
 
-    TIM_DMACmd(RGB_LED_TIM, RGB_LED_TIM_DMA_REQ, ENABLE);
-    TIM_Cmd(RGB_LED_TIM, ENABLE);
+    TIM_DMACmd(rgb_TIM, rgb_TIM_DMA_REQ, ENABLE);
+    TIM_Cmd(rgb_TIM, ENABLE);
 }
 
-void rgb_led_set_brightness(const uint8_t brightness)
+void rgb_set_brightness(const uint8_t brightness)
 {
     s_brightness = brightness;
 
     if (!s_dma_busy)
     {
-        rgb_led_set_color(s_last_rgb.r, s_last_rgb.g, s_last_rgb.b);
+        rgb_set_color_t(s_last_rgb.r, s_last_rgb.g, s_last_rgb.b);
     }
 }
 
-uint8_t rgb_led_is_busy(void)
+uint8_t rgb_is_busy(void)
 {
     return s_dma_busy;
 }
 
-static void gradient_prepare_segment(Gradient* grad, const uint8_t seg_idx)
+static void Gradient_t_prepare_segment(Gradient_t* grad, const uint8_t seg_idx)
 {
-    const Color* start = &grad->path[seg_idx];
-    const Color* end = &grad->path[seg_idx + 1U];
+    const Color_t* start = &grad->path[seg_idx];
+    const Color_t* end = &grad->path[seg_idx + 1U];
 
     grad->seg_idx = seg_idx;
     grad->cur_r = (int32_t)start->r << 8;
@@ -144,7 +144,7 @@ static void gradient_prepare_segment(Gradient* grad, const uint8_t seg_idx)
     grad->remaining_steps = grad->steps_per_segment;
 }
 
-void start_gradient(Gradient* grad, const Color* path, const uint8_t path_len, uint16_t steps_per_segment,
+void start_Gradient_t(Gradient_t* grad, const Color_t* path, const uint8_t path_len, uint16_t steps_per_segment,
                     const uint8_t loop)
 {
     if (grad == 0 || path == 0 || path_len < 2U)
@@ -163,12 +163,12 @@ void start_gradient(Gradient* grad, const Color* path, const uint8_t path_len, u
     grad->loop = (loop != 0U) ? 1U : 0U;
     grad->is_running = 1U;
 
-    gradient_prepare_segment(grad, 0U);
+    Gradient_t_prepare_segment(grad, 0U);
 }
 
-uint8_t update_gradient(Gradient* grad, Color* out_color)
+uint8_t update_Gradient_t(Gradient_t* grad, Color_t* out_Color_t)
 {
-    if ((grad == 0) || (out_color == 0) || (grad->is_running == 0U))
+    if ((grad == 0) || (out_Color_t == 0) || (grad->is_running == 0U))
     {
         return 0U;
     }
@@ -181,9 +181,9 @@ uint8_t update_gradient(Gradient* grad, Color* out_color)
             grad->cur_g += grad->step_g;
             grad->cur_b += grad->step_b;
 
-            out_color->r = (uint8_t)(grad->cur_r >> 8);
-            out_color->g = (uint8_t)(grad->cur_g >> 8);
-            out_color->b = (uint8_t)(grad->cur_b >> 8);
+            out_Color_t->r = (uint8_t)(grad->cur_r >> 8);
+            out_Color_t->g = (uint8_t)(grad->cur_g >> 8);
+            out_Color_t->b = (uint8_t)(grad->cur_b >> 8);
 
             grad->remaining_steps--;
             return 1U;
@@ -191,13 +191,13 @@ uint8_t update_gradient(Gradient* grad, Color* out_color)
 
         if ((grad->seg_idx + 1U) < (uint8_t)(grad->path_len - 1U))
         {
-            gradient_prepare_segment(grad, (uint8_t)(grad->seg_idx + 1U));
+            Gradient_t_prepare_segment(grad, (uint8_t)(grad->seg_idx + 1U));
             continue;
         }
 
         if (grad->loop != 0U)
         {
-            gradient_prepare_segment(grad, 0U);
+            Gradient_t_prepare_segment(grad, 0U);
             continue;
         }
 
@@ -212,9 +212,9 @@ INTF void DMA1_Channel3_IRQHandler(void)
     {
         DMA_ClearITPendingBit(DMA1_IT_TC3);
 
-        TIM_DMACmd(RGB_LED_TIM, RGB_LED_TIM_DMA_REQ, DISABLE);
-        DMA_Cmd(RGB_LED_DMA, DISABLE);
-        TIM_SetCompare2(RGB_LED_TIM, 0);
+        TIM_DMACmd(rgb_TIM, rgb_TIM_DMA_REQ, DISABLE);
+        DMA_Cmd(rgb_DMA, DISABLE);
+        TIM_SetCompare2(rgb_TIM, 0);
         s_dma_busy = 0U;
     }
 }

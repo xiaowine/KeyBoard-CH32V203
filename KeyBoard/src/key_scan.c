@@ -1,5 +1,6 @@
-#include "key.h"
+#include "key_scan.h"
 #include <string.h>
+#include "debug.h"
 #include "utils.h"
 
 /* 模块内部缓冲区与标志 */
@@ -8,30 +9,30 @@ static uint8_t hc165_snapshot[HC165_COUNT];
 static volatile uint8_t dma_transfer_complete_flag = 0;
 
 /* 3kHz 采样与过滤管理 */
-static uint8_t key_sample_buffer[KEY_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
+static uint8_t key_sample_buffer[SCAN_SAMPLE_WINDOW][HC165_COUNT]; /* 3 次采样缓存 */
 static uint8_t key_filtered_state[HC165_COUNT]; /* 1ms 多数投票结果 */
-static key_debounce_t key_debounce_state[KEY_TOTAL_KEYS]; /* 每键状态跟踪 */
+static Key_Debounce_t key_debounce_state[TOTAL_KEYS]; /* 每键状态跟踪 */
 
 void key_init(void)
 {
     GPIO_InitTypeDef GPIO_InitStructure = {0};
     GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
 
-    GPIO_InitStructure.GPIO_Pin = KEY_CE | KEY_PL;
+    GPIO_InitStructure.GPIO_Pin = HC165_CE | HC165_PL;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_Out_PP;
-    GPIO_Init(KEY_PORT, &GPIO_InitStructure);
-    GPIO_SetBits(KEY_PORT, KEY_CE | KEY_PL);
+    GPIO_Init(HC165_PORT, &GPIO_InitStructure);
+    GPIO_SetBits(HC165_PORT, HC165_CE | HC165_PL);
 
-    GPIO_InitStructure.GPIO_Pin = KEY_MISO;
+    GPIO_InitStructure.GPIO_Pin = HC165_MISO;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_IPU;
-    GPIO_Init(KEY_PORT, &GPIO_InitStructure);
+    GPIO_Init(HC165_PORT, &GPIO_InitStructure);
 
-    GPIO_InitStructure.GPIO_Pin = KEY_CP;
+    GPIO_InitStructure.GPIO_Pin = HC165_CP;
     GPIO_InitStructure.GPIO_Mode = GPIO_Mode_AF_PP;
-    GPIO_Init(KEY_PORT, &GPIO_InitStructure);
+    GPIO_Init(HC165_PORT, &GPIO_InitStructure);
 
     /* SPI+DMA 设置，用于通过 KEY_SPI 读取 74HC165 */
-    RCC_APB2PeriphClockCmd(KEY_SPI_RCC, ENABLE);
+    RCC_APB2PeriphClockCmd(HC165_SPI_RCC, ENABLE);
 
     SPI_InitTypeDef SPI_InitStructure = {0};
     SPI_InitStructure.SPI_Direction = SPI_Direction_2Lines_RxOnly;
@@ -43,13 +44,13 @@ void key_init(void)
     SPI_InitStructure.SPI_BaudRatePrescaler = SPI_BaudRatePrescaler_8;
     SPI_InitStructure.SPI_FirstBit = SPI_FirstBit_MSB;
     SPI_InitStructure.SPI_CRCPolynomial = 0;
-    SPI_Init(KEY_SPI, &SPI_InitStructure);
+    SPI_Init(HC165_SPI, &SPI_InitStructure);
 
     /* SPI DMA 配置 */
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_DMA1, ENABLE);
 
     DMA_InitTypeDef DMA_InitStructure = {0};
-    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&KEY_SPI->DATAR;
+    DMA_InitStructure.DMA_PeripheralBaseAddr = (uint32_t)&HC165_SPI->DATAR;
     DMA_InitStructure.DMA_MemoryBaseAddr = (uint32_t)spi_dma_rx_buf;
     DMA_InitStructure.DMA_DIR = DMA_DIR_PeripheralSRC;
     DMA_InitStructure.DMA_BufferSize = HC165_COUNT;
@@ -78,9 +79,9 @@ void key_init(void)
     NVIC_DMA_InitStructure.NVIC_IRQChannelCmd = ENABLE;
     NVIC_Init(&NVIC_DMA_InitStructure);
 
-    SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Rx, ENABLE);
+    SPI_I2S_DMACmd(HC165_SPI, SPI_I2S_DMAReq_Rx, ENABLE);
     // SPI_I2S_DMACmd(KEY_SPI, SPI_I2S_DMAReq_Tx, ENABLE);
-    SPI_Cmd(KEY_SPI, ENABLE);
+    SPI_Cmd(HC165_SPI, ENABLE);
 }
 
 uint8_t key_transfer_complete(void)
@@ -96,13 +97,13 @@ void key_copy_snapshot(uint8_t dest[HC165_COUNT])
 void key_start_scan(void)
 {
     DMA_Cmd(DMA1_Channel2, DISABLE);
-    SPI_Cmd(KEY_SPI, DISABLE);
+    SPI_Cmd(HC165_SPI, DISABLE);
 
     // 清除 SPI 的接收缓冲区和状态位（非常重要！）
     // 读两次 DR 寄存器，并清除 OVR 溢出标志
-    (void)KEY_SPI->DATAR;
-    (void)KEY_SPI->DATAR;
-    SPI_I2S_ClearFlag(KEY_SPI, SPI_I2S_FLAG_OVR);
+    (void)HC165_SPI->DATAR;
+    (void)HC165_SPI->DATAR;
+    SPI_I2S_ClearFlag(HC165_SPI, SPI_I2S_FLAG_OVR);
 
     DMA_ClearITPendingBit(DMA1_IT_TC2);
     dma_transfer_complete_flag = 0;
@@ -116,11 +117,11 @@ void key_start_scan(void)
      * - 将 CE 拉低以启用时钟并执行 SPI 时钟读取。
      */
 
-    KEY_DISABLE_CLOCK(); /* 禁止时钟 */
-    KEY_LOAD_PL(); /* 加载并行输入 */
-    KEY_ENABLE_CLOCK(); /* 启用时钟 */
+    HC165_DISABLE_CLOCK(); /* 禁止时钟 */
+    HC165_LOAD_PL(); /* 加载并行输入 */
+    HC165_ENABLE_CLOCK(); /* 启用时钟 */
     DMA_Cmd(DMA1_Channel2, ENABLE);
-    SPI_Cmd(KEY_SPI, ENABLE);
+    SPI_Cmd(HC165_SPI, ENABLE);
 }
 
 /**
@@ -130,7 +131,7 @@ void key_start_scan(void)
  */
 void key_store_sample(const uint8_t slot, const uint8_t sample[HC165_COUNT])
 {
-    if (slot >= KEY_SAMPLE_WINDOW)
+    if (slot >= SCAN_SAMPLE_WINDOW)
         return;
     memcpy(key_sample_buffer[slot], sample, HC165_COUNT);
 }
@@ -157,13 +158,13 @@ void key_do_filter_and_update(void)
     }
 
     /* 更新每键的四态状态机（连续 2 次确认转移） */
-    for (uint8_t key_idx = 0; key_idx < KEY_TOTAL_KEYS; key_idx++)
+    for (uint8_t key_idx = 0; key_idx < TOTAL_KEYS; key_idx++)
     {
         const uint8_t byte_idx = key_idx >> 3; /* key_idx / 8 */
         const uint8_t bit_idx = key_idx & 0x07; /* key_idx % 8 */
         const uint8_t key_level = (key_filtered_state[byte_idx] >> bit_idx) & 1;
 
-        key_debounce_t* state = &key_debounce_state[key_idx];
+        Key_Debounce_t* state = &key_debounce_state[key_idx];
 
         switch (state->state)
         {
@@ -212,9 +213,9 @@ void key_do_filter_and_update(void)
  * @param key_idx 按键索引 (0-23)
  * @return 按键状态 (KEY_DEBOUNCE_IDLE 或 KEY_DEBOUNCE_PRESSED)
  */
-key_debounce_state_e key_get_debounce_state(const uint8_t key_idx)
+Key_Debounce_State_t key_get_debounce_state(const uint8_t key_idx)
 {
-    if (key_idx >= KEY_TOTAL_KEYS)
+    if (key_idx >= TOTAL_KEYS)
         return KEY_DEBOUNCE_IDLE;
     return key_debounce_state[key_idx].state;
 }
@@ -226,7 +227,7 @@ INTF void DMA1_Channel2_IRQHandler(void)
         DMA_ClearITPendingBit(DMA1_IT_TC2);
 
         // 必须立即关闭 SPI，否则时钟停不下来，会多读数据
-        SPI_Cmd(KEY_SPI, DISABLE);
+        SPI_Cmd(HC165_SPI, DISABLE);
         DMA_Cmd(DMA1_Channel2, DISABLE);
         /* 将接收的数据拷贝到模块快照 */
         memcpy(hc165_snapshot, spi_dma_rx_buf, HC165_COUNT);

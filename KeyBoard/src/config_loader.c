@@ -1,17 +1,19 @@
 #include "config_loader.h"
 #include <string.h>
-#include "keymap.h"
+#include "key_map.h"
+#include "config.h"
+#include "debug.h"
 
 extern uint8_t _config_lma[]; // NOLINT(*-reserved-identifier)
 
-ConfigBootConfig config_boot_config_ram = {0};
-static uint32_t config_flash_shadow_words[CONFIG_FLASH_BYTES / sizeof(uint32_t)] = {0};
+ConfigHeader_t config_boot_config_ram = {0};
+static uint32_t config_flash_shadow_words[CONFIG_FLASH_BYTE / sizeof(uint32_t)] = {0};
 
 static const uint8_t *config_loader_layer_src(const uint8_t layer)
 {
   const uint8_t *flash_base = &_config_lma[0];
-  const uint8_t *layers_src = flash_base + sizeof(ConfigBootConfig);
-  return layers_src + (size_t)layer * CONFIG_LAYER_SIZE;
+  const uint8_t *layers_src = flash_base + sizeof(ConfigHeader_t);
+  return layers_src + (size_t)layer * CONFIG_KEYMAP_LAYER_BYTE;
 }
 
 static uint8_t config_loader_write_flash_range(const uint32_t data_offset, const uint8_t *data, const uint32_t data_len,
@@ -25,14 +27,14 @@ static uint8_t config_loader_write_flash_range(const uint32_t data_offset, const
     return 0;
   }
 
-  if (data_offset + data_len > CONFIG_FLASH_BYTES)
+  if (data_offset + data_len > CONFIG_FLASH_BYTE)
   {
     PRINT("%s: out of range, offset=%u len=%u\r\n", log_tag, (unsigned)data_offset, (unsigned)data_len);
     return 0;
   }
 
-  const uint32_t aligned_start = data_offset & ~(CONFIG_PAGE_BYTES - 1u);
-  const uint32_t aligned_end = (data_offset + data_len + (CONFIG_PAGE_BYTES - 1u)) & ~(CONFIG_PAGE_BYTES - 1u);
+  const uint32_t aligned_start = data_offset & ~(CONFIG_FLASH_PAGE_BYTE - 1u);
+  const uint32_t aligned_end = (data_offset + data_len + (CONFIG_FLASH_PAGE_BYTE - 1u)) & ~(CONFIG_FLASH_PAGE_BYTE - 1u);
   const uint32_t aligned_len = aligned_end - aligned_start;
   const uint32_t patch_offset = data_offset - aligned_start;
 
@@ -64,7 +66,7 @@ static uint8_t config_loader_write_flash_range(const uint32_t data_offset, const
   return 1;
 }
 
-void config_loader_read_boot_config(ConfigBootConfig *config)
+void config_loader_read_boot_config(ConfigHeader_t *config)
 {
   if (config == NULL)
   {
@@ -76,7 +78,7 @@ void config_loader_read_boot_config(ConfigBootConfig *config)
 
 void config_loader_init(void)
 {
-  const size_t layer_size = CONFIG_LAYER_SIZE;
+  const size_t layer_size = CONFIG_KEYMAP_LAYER_BYTE;
 
   memset(config_active, 0, layer_size);
   config_loader_read_boot_config(&config_boot_config_ram);
@@ -86,7 +88,7 @@ void config_loader_init(void)
 
   config_boot_config_ram.bits.boot_layer = -1;
 
-  if (requested_layer < (uint8_t)CONFIG_LAYERS)
+  if (requested_layer < (uint8_t)CONFIG_KEYMAP_LAYERS_NUM)
   {
     config_loader_load_layer(requested_layer);
   }
@@ -98,12 +100,12 @@ void config_loader_init(void)
   const int active_layer = config_boot_config_ram.bits.boot_layer;
 
   PRINT("Config loader: boot_layer=%u, ver_cfg=0x%X, active_layer=%d, max_layers=%d\r\n",
-        (unsigned)requested_layer, (unsigned)ver_cfg, active_layer, (int)CONFIG_LAYERS);
+        (unsigned)requested_layer, (unsigned)ver_cfg, active_layer, (int)CONFIG_KEYMAP_LAYERS_NUM);
 }
 
 void config_loader_load_layer(const uint8_t layer)
 {
-  if (layer >= CONFIG_LAYERS)
+  if (layer >= CONFIG_KEYMAP_LAYERS_NUM)
   {
     PRINT("Config loader: requested layer %u out of range, skip loading\r\n", (unsigned)layer);
     return;
@@ -111,32 +113,32 @@ void config_loader_load_layer(const uint8_t layer)
 
   const uint8_t *src = config_loader_layer_src(layer);
 
-  memcpy(config_active, src, CONFIG_LAYER_SIZE);
+  memcpy(config_active, src, CONFIG_KEYMAP_LAYER_BYTE);
   config_boot_config_ram.bits.boot_layer = layer;
 }
 
-uint8_t config_loader_write_boot_config(const ConfigBootConfig *config)
+uint8_t config_loader_write_boot_config(const ConfigHeader_t *config)
 {
-  uint32_t page_words[CONFIG_PAGE_BYTES / sizeof(uint32_t)] = {0};
+  uint32_t page_words[CONFIG_FLASH_PAGE_BYTE / sizeof(uint32_t)] = {0};
   const uint32_t config_addr = FLASH_BASE + (uint32_t)&_config_lma[0];
-  ConfigBootConfig flash_config = {0};
+  ConfigHeader_t flash_config = {0};
 
   if (config == NULL)
   {
     return 0;
   }
 
-  memcpy(page_words, &_config_lma[0], CONFIG_PAGE_BYTES);
+  memcpy(page_words, &_config_lma[0], CONFIG_FLASH_PAGE_BYTE);
   memcpy(page_words, &config->raw, sizeof(config->raw));
 
-  FLASH_Status status = FLASH_ROM_ERASE(config_addr, CONFIG_PAGE_BYTES);
+  FLASH_Status status = FLASH_ROM_ERASE(config_addr, CONFIG_FLASH_PAGE_BYTE);
   if (status != FLASH_COMPLETE)
   {
     PRINT("Set boot layer: flash erase failed, status=%d\r\n", status);
     return 0;
   }
 
-  status = FLASH_ROM_WRITE(config_addr, page_words, CONFIG_PAGE_BYTES);
+  status = FLASH_ROM_WRITE(config_addr, page_words, CONFIG_FLASH_PAGE_BYTE);
   if (status != FLASH_COMPLETE)
   {
     PRINT("Set boot layer: flash write failed, status=%d\r\n", status);
@@ -156,29 +158,29 @@ uint8_t config_loader_write_boot_config(const ConfigBootConfig *config)
 uint8_t config_loader_write_layer(const uint8_t layer, const uint8_t *layer_data, const uint16_t layer_data_len)
 {
   const int active_layer = config_boot_config_ram.bits.boot_layer;
-  const uint32_t layer_offset = CONFIG_HEADER_BYTES + ((uint32_t)layer * (uint32_t)CONFIG_LAYER_SIZE);
+  const uint32_t layer_offset = CONFIG_HEADER_BYTE + ((uint32_t)layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE);
 
-  if (layer >= CONFIG_LAYERS)
+  if (layer >= CONFIG_KEYMAP_LAYERS_NUM)
   {
     PRINT("Set layer config: layer %u out of range\r\n", (unsigned)layer);
     return 0;
   }
 
-  if ((uint32_t)layer_data_len != (uint32_t)CONFIG_LAYER_SIZE)
+  if ((uint32_t)layer_data_len != (uint32_t)CONFIG_KEYMAP_LAYER_BYTE)
   {
     PRINT("Set layer config: invalid payload length %u, expected %u\r\n",
-          (unsigned)layer_data_len, (unsigned)CONFIG_LAYER_SIZE);
+          (unsigned)layer_data_len, (unsigned)CONFIG_KEYMAP_LAYER_BYTE);
     return 0;
   }
 
-  if (!config_loader_write_flash_range(layer_offset, layer_data, CONFIG_LAYER_SIZE, "Set layer config"))
+  if (!config_loader_write_flash_range(layer_offset, layer_data, CONFIG_KEYMAP_LAYER_BYTE, "Set layer config"))
   {
     return 0;
   }
 
   if (active_layer == (int)layer)
   {
-    memcpy(config_active, layer_data, CONFIG_LAYER_SIZE);
+    memcpy(config_active, layer_data, CONFIG_KEYMAP_LAYER_BYTE);
   }
 
   return 1;
@@ -186,7 +188,7 @@ uint8_t config_loader_write_layer(const uint8_t layer, const uint8_t *layer_data
 
 uint8_t config_loader_write_all_layers(const uint8_t *layers_data, const uint16_t layers_data_len)
 {
-  const uint32_t all_layers_size = (uint32_t)CONFIG_LAYER_SIZE * (CONFIG_LAYERS);
+  const uint32_t all_layers_size = (uint32_t)CONFIG_KEYMAP_LAYER_BYTE * (CONFIG_KEYMAP_LAYERS_NUM);
   const int active_layer = config_boot_config_ram.bits.boot_layer;
 
   if ((uint32_t)layers_data_len != all_layers_size)
@@ -196,15 +198,15 @@ uint8_t config_loader_write_all_layers(const uint8_t *layers_data, const uint16_
     return 0;
   }
 
-  if (!config_loader_write_flash_range(CONFIG_HEADER_BYTES, layers_data, all_layers_size,
+  if (!config_loader_write_flash_range(CONFIG_HEADER_BYTE, layers_data, all_layers_size,
                                        "Set all layer config"))
   {
     return 0;
   }
 
-  if ((active_layer >= 0) && (active_layer < CONFIG_LAYERS))
+  if ((active_layer >= 0) && (active_layer < CONFIG_KEYMAP_LAYERS_NUM))
   {
-    memcpy(config_active, layers_data + ((uint32_t)active_layer * (uint32_t)CONFIG_LAYER_SIZE), CONFIG_LAYER_SIZE);
+    memcpy(config_active, layers_data + ((uint32_t)active_layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE), CONFIG_KEYMAP_LAYER_BYTE);
   }
 
   return 1;

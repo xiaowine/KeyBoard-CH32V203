@@ -37,7 +37,7 @@
 
 ## 3. 协议结构
 
-## 3.1 帧结构 `FrameData`（固定 64 字节）
+## 3.1 帧结构 `Frame_Data_t`（固定 64 字节）
 
 - `seq_num`：序号，`START` 固定 0，`DATA` 从 1 递增。
 - `type`：帧类型（`FRAME_TYPE_*`）。
@@ -75,9 +75,9 @@
 
 ## 4. 关键上下文对象
 
-- `ReceiveHandle`：接收会话上下文（类型、长度、分片进度、缓存、接收重试计数）。
-- `SendHandle`：发送状态机上下文（当前帧、状态、ACK/NACK 标志、重试计数、来源）。
-- `ReplySession`：业务回复会话（阶段、序号、总长度、已 ACK 长度、缓存）。
+- `Receive_Handle_t`：接收会话上下文（类型、长度、分片进度、缓存、接收重试计数）。
+- `Send_Handle_t`：发送状态机上下文（当前帧、状态、ACK/NACK 标志、重试计数、来源）。
+- `Reply_Session_t`：业务回复会话（阶段、序号、总长度、已 ACK 长度、缓存）。
 
 ## 5. 接收流程（RX）
 
@@ -115,7 +115,7 @@ flowchart TD
     E -- 是 --> F[释放接收缓存并复位]
     E -- 否 --> Z
 
-    B -- 是 --> G[解析FrameData]
+    B -- 是 --> G[解析Frame_Data_t]
     G --> H{seq_num合法?}
     H -- 否 --> I[发送ERROR控制帧]
     H -- 是 --> J{CRC通过?}
