@@ -59,12 +59,10 @@ typedef enum
     DATA_TYPE_GET_ALL_LAYER_KEYMAP = 0b0100,
     /** 设置当前层。 */
     DATA_TYPE_SET_LAYER = 0b0001,
-    /** 设置启动层 */
-    DATA_TYPE_SET_BOOT_LAYER = 0b0111,
+    /** 设置配置头 */
+    DATA_TYPE_SET_HEADER = 0b0111,
     /** 设置层映射 */
     DATA_TYPE_SET_LAYER_KEYMAP = 0b0011,
-    /** 设置全部层映射 */
-    DATA_TYPE_SET_ALL_LAYER_KEYMAP = 0b1111,
 } DATA_TYPE;
 
 /** @brief 发送状态机状态定义。 */

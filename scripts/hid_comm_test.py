@@ -47,7 +47,7 @@ SINGLE_CASE_CHOICES = (
     "set-layer",
     "set-layer-keymap",
     "set-all-layer-keymap",
-    "set-boot-layer",
+    "set-header",
 )
 
 _TYPE_DEFAULTS = {
@@ -61,8 +61,7 @@ _TYPE_DEFAULTS = {
     "DATA_TYPE_GET_LAYER_KEYMAP": 2,
     "DATA_TYPE_SET_LAYER_KEYMAP": 3,
     "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 4,
-    "DATA_TYPE_SET_ALL_LAYER_KEYMAP": 15,
-    "DATA_TYPE_SET_BOOT_LAYER": 7,
+    "DATA_TYPE_SET_HEADER": 7,
 }
 
 
@@ -114,9 +113,8 @@ DATA_TYPE_SET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_LAYER_KEYMAP"]
 DATA_TYPE_GET_KEY = _TYPE_VALUES["DATA_TYPE_GET_KEY"]
 DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
 DATA_TYPE_GET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_ALL_LAYER_KEYMAP"]
-DATA_TYPE_SET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_ALL_LAYER_KEYMAP"]
 DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
-DATA_TYPE_SET_BOOT_LAYER = _TYPE_VALUES["DATA_TYPE_SET_BOOT_LAYER"]
+DATA_TYPE_SET_HEADER = _TYPE_VALUES["DATA_TYPE_SET_HEADER"]
 TRANSPORT_TEST_PAYLOAD_TYPE = DATA_TYPE_SET_LAYER
 GET_KEY_EXPECTED_REPLY_LEN = 3
 
@@ -881,13 +879,13 @@ def run_zero_len_request_expect_ack_only(
     return ok
 
 
-def run_set_boot_layer_test(
+def run_set_header_test(
     h: hid.device,
     observe_sec: float,
     verbose: bool = True,
     diag: Optional[Dict[str, object]] = None,
 ) -> bool:
-    name = "DATA_TYPE_SET_BOOT_LAYER test"
+    name = "DATA_TYPE_SET_HEADER test"
     if verbose:
         print(f"\n================ {name} ================")
 
@@ -896,9 +894,34 @@ def run_set_boot_layer_test(
             print("  SKIP: KEYMAP_LAYER_COUNT <= 0")
         fill_diag(diag, "invalid KEYMAP_LAYER_COUNT", [])
         return False
+    # Build a ConfigHeader_t value according to comm spec:
+    # typedef union
+    # {
+    #     uint32_t raw;
+    #
+    #     struct
+    #     {
+    #         uint32_t boot_layer : 4;
+    #         uint32_t rgb_color_layer : 3;
+    #         uint32_t open_rgb_led : 1;
+    #         uint32_t normal_mode : 1;
+    #         uint32_t reserved : 23;
+    #     } bits;
+    # } ConfigHeader_t;
 
-    layer = random.randrange(KEYMAP_LAYER_COUNT)
-    payload = bytes([layer])
+    # Choose fields (respect bit-width limits)
+    boot_layer = random.randrange(min(KEYMAP_LAYER_COUNT, 1 << 4))
+    rgb_color_layer = random.randrange(0, 1 << 3)
+    open_rgb_led = random.randrange(0, 2)
+    normal_mode = random.randrange(0, 2)
+
+    header_raw = (
+        (boot_layer & 0xF)
+        | ((rgb_color_layer & 0x7) << 4)
+        | ((open_rgb_led & 0x1) << 7)
+        | ((normal_mode & 0x1) << 8)
+    )
+    payload = struct.pack("<I", header_raw)
     received_all: List[Dict[str, int]] = []
 
     if not send_start_expect_ack(
@@ -906,12 +929,12 @@ def run_set_boot_layer_test(
         len(payload),
         observe_sec,
         received_all,
-        payload_type=DATA_TYPE_SET_BOOT_LAYER,
+        payload_type=DATA_TYPE_SET_HEADER,
     ):
         if verbose:
             print_summary(received_all, name)
-            print(f"  FAIL: START stage failed for boot_layer={layer}.")
-        fill_diag(diag, f"START stage failed for boot_layer={layer}", received_all)
+            print(f"  FAIL: START stage failed for header_raw=0x{header_raw:08X}.")
+        fill_diag(diag, f"START stage failed for header_raw=0x{header_raw:08X}", received_all)
         return False
 
     if not send_data_expect_type(
@@ -921,12 +944,12 @@ def run_set_boot_layer_test(
         observe_sec,
         FRAME_TYPE_ACK,
         received_all,
-        payload_type=DATA_TYPE_SET_BOOT_LAYER,
+        payload_type=DATA_TYPE_SET_HEADER,
     ):
         if verbose:
             print_summary(received_all, name)
-            print(f"  FAIL: DATA stage failed for boot_layer={layer}.")
-        fill_diag(diag, f"DATA stage failed for boot_layer={layer}", received_all)
+            print(f"  FAIL: DATA stage failed for header_raw=0x{header_raw:08X}.")
+        fill_diag(diag, f"DATA stage failed for header_raw=0x{header_raw:08X}", received_all)
         return False
 
     extra_frames: List[Dict[str, int]] = []
@@ -955,11 +978,18 @@ def run_set_boot_layer_test(
     if verbose:
         print_summary(received_all, name)
         if ok:
-            print(f"  PASS: boot_layer={layer}, completed START/DATA/ACK flow with no extra reply.")
+            print(
+                f"  PASS: header_raw=0x{header_raw:08X}, "
+                f"boot_layer={boot_layer}, rgb_color_layer={rgb_color_layer}, "
+                f"open_rgb_led={open_rgb_led}, normal_mode={normal_mode}, "
+                "completed START/DATA/ACK flow with no extra reply."
+            )
         else:
-            print(f"  FAIL: boot_layer={layer}, saw unexpected extra frame(s) after DATA ACK.")
+            print(
+                f"  FAIL: header_raw=0x{header_raw:08X}, saw unexpected extra frame(s) after DATA ACK."
+            )
     if not ok:
-        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for boot_layer={layer}", received_all)
+        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for header_raw=0x{header_raw:08X}", received_all)
     return ok
 
 
@@ -1313,106 +1343,6 @@ def run_set_layer_keymap_test(
         print("  PASS: current layer write/readback and restore all succeeded.")
     return True
 
-
-def run_set_all_layer_keymap_test(
-    h: hid.device,
-    observe_sec: float,
-    verbose: bool = True,
-    diag: Optional[Dict[str, object]] = None,
-) -> bool:
-    name = "DATA_TYPE_SET_ALL_LAYER_KEYMAP test"
-    if verbose:
-        print(f"\n================ {name} ================")
-
-    ok, original_payload, received, reason = fetch_zero_len_reply_payload(
-        h,
-        observe_sec,
-        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
-        verbose=verbose,
-    )
-    if not ok:
-        if verbose:
-            print_summary(received, name)
-            print(f"  FAIL: pre-read all layers failed: {reason}")
-        fill_diag(diag, f"pre-read all layers failed: {reason}", received)
-        return False
-
-    test_payload = _mutate_payload_bytes(original_payload, salt=0x47)
-
-    ok, received, reason = send_chunked_set_request_expect_ack_only(
-        h,
-        observe_sec,
-        DATA_TYPE_SET_ALL_LAYER_KEYMAP,
-        test_payload,
-        verbose=verbose,
-    )
-    if not ok:
-        if verbose:
-            print_summary(received, name)
-            print(f"  FAIL: set all layers failed: {reason}")
-        fill_diag(diag, f"set all layers failed: {reason}", received)
-        return False
-
-    ok, verify_payload, received, reason = fetch_zero_len_reply_payload(
-        h,
-        observe_sec,
-        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
-        verbose=verbose,
-    )
-    if not ok:
-        if verbose:
-            print_summary(received, name)
-            print(f"  FAIL: verify all layers failed: {reason}")
-        fill_diag(diag, f"verify all layers failed: {reason}", received)
-        return False
-    if verify_payload != test_payload:
-        if verbose:
-            print_summary(received, name)
-            print("  FAIL: readback mismatch after SET_ALL_LAYER_KEYMAP.")
-        fill_diag(diag, "readback mismatch after SET_ALL_LAYER_KEYMAP", received)
-        return False
-
-    ok, received, reason = send_chunked_set_request_expect_ack_only(
-        h,
-        observe_sec,
-        DATA_TYPE_SET_ALL_LAYER_KEYMAP,
-        original_payload,
-        verbose=verbose,
-    )
-    if not ok:
-        if verbose:
-            print_summary(received, name)
-            print(f"  FAIL: restore all layers failed: {reason}")
-        fill_diag(diag, f"restore all layers failed: {reason}", received)
-        return False
-
-    ok, restored_payload, received, reason = fetch_zero_len_reply_payload(
-        h,
-        observe_sec,
-        DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-        expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
-        verbose=verbose,
-    )
-    if not ok:
-        if verbose:
-            print_summary(received, name)
-            print(f"  FAIL: verify restore all layers failed: {reason}")
-        fill_diag(diag, f"verify restore all layers failed: {reason}", received)
-        return False
-    if restored_payload != original_payload:
-        if verbose:
-            print_summary(received, name)
-            print("  FAIL: restore mismatch after SET_ALL_LAYER_KEYMAP.")
-        fill_diag(diag, "restore mismatch after SET_ALL_LAYER_KEYMAP", received)
-        return False
-
-    if verbose:
-        print("  PASS: all-layer write/readback and restore all succeeded.")
-    return True
-
-
 def _build_stress_query_request_payload(payload_type: int, length: int = STRESS_QUERY_REQUEST_LEN) -> bytes:
     if length <= 0:
         return b""
@@ -1434,7 +1364,6 @@ def run_chunked_query_request_expect_reply(
         print(f"\n================ {name} ================")
 
     received_all: List[Dict[str, int]] = []
-    got_start_ack = False
     got_reply_start = False
     got_reply_data = False
     reply_total_len: Optional[int] = None
@@ -1731,17 +1660,8 @@ def run_continuous_stress_test(
             ),
         ),
         (
-            "SET_ALL_LAYER_KEYMAP",
-            lambda d: run_set_all_layer_keymap_test(
-                h,
-                observe_sec,
-                verbose=False,
-                diag=d,
-            ),
-        ),
-        (
-            "SET_BOOT_LAYER",
-            lambda d: run_set_boot_layer_test(
+            "SET_HEADER",
+            lambda d: run_set_header_test(
                 h,
                 observe_sec,
                 verbose=False,
@@ -1897,17 +1817,9 @@ def main() -> int:
                         ),
                     ),
                     (
-                        "set-all-layer-keymap",
-                        "DATA_TYPE_SET_ALL_LAYER_KEYMAP test",
-                        lambda: run_set_all_layer_keymap_test(
-                            h,
-                            args.observe_sec,
-                        ),
-                    ),
-                    (
-                        "set-boot-layer",
-                        "DATA_TYPE_SET_BOOT_LAYER test",
-                        lambda: run_set_boot_layer_test(
+                        "set-header",
+                        "DATA_TYPE_SET_HEADER test",
+                        lambda: run_set_header_test(
                             h,
                             args.observe_sec,
                         ),

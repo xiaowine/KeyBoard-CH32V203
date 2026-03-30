@@ -44,7 +44,7 @@ void app_init(void)
 
     // RGB 初始化
     rgb_init();
-    if (config_boot_config_ram.bits.open_rgb_led)
+    if (config_header_ram.bits.open_rgb_led)
     {
         start_Gradient_t(&rgb_Gradient_t, active_rgb_color, sizeof(active_rgb_color) / sizeof(active_rgb_color[0]), 600,
                          1U);
@@ -141,7 +141,7 @@ void app_run(void)
     if (ms5_tick)
     {
         comm_controller_process();
-        if (config_boot_config_ram.bits.open_rgb_led)
+        if (config_header_ram.bits.open_rgb_led)
         {
             static RGB_Color_t next_Color_t;
             if (update_Gradient_t(&rgb_Gradient_t, &next_Color_t) != 0U)
@@ -228,31 +228,29 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             config_load_keymap_layer(layer);
             break;
         }
-    case DATA_TYPE_SET_BOOT_LAYER:
+    case DATA_TYPE_SET_HEADER:
         {
-            uint8_t layer = 0;
-            if (payload_len < sizeof(layer))
+            ConfigHeader_t header = {0};
+            if (payload_len != sizeof(ConfigHeader_t))
             {
                 return;
             }
-            memcpy(&layer, payload, sizeof(layer));
-            if (layer >= CONFIG_KEYMAP_LAYERS_NUM)
+            memcpy(&header, payload, sizeof(ConfigHeader_t));
+            if (config_write_header(&header))
             {
-                return;
+                memcpy(&config_header_ram, &header, sizeof(ConfigHeader_t));
+                PRINT("Set Header ok\r\n");
             }
-            ConfigHeader_t config_boot_config = {0};
+            else
+            {
+                PRINT("Set Header failed\r\n");
+            }
 
-            config_read_header(&config_boot_config);
-            config_boot_config.bits.boot_layer = layer;
-            if (config_write_header(&config_boot_config))
-            {
-                PRINT("Set boot layer: %u\r\n", (unsigned)layer);
-            }
             break;
         }
     case DATA_TYPE_SET_LAYER_KEYMAP:
         {
-            const int active_layer = config_boot_config_ram.bits.boot_layer;
+            const int active_layer = config_header_ram.bits.boot_layer;
             const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
             if ((active_layer < 0) || (active_layer >= CONFIG_KEYMAP_LAYERS_NUM))
             {
@@ -270,23 +268,6 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             if (config_write_keymap_layer((uint8_t)active_layer, payload, payload_len))
             {
                 PRINT("Set layer config: layer=%u\r\n", (unsigned)active_layer);
-            }
-            break;
-        }
-    case DATA_TYPE_SET_ALL_LAYER_KEYMAP:
-        {
-            const uint16_t all_layers_size = sizeof(KeyMap_t) * TOTAL_KEYS * CONFIG_KEYMAP_LAYERS_NUM;
-
-            if (payload_len != all_layers_size)
-            {
-                PRINT("Set all layer config: invalid payload length %u, expected %u\r\n",
-                      (unsigned)payload_len, (unsigned)all_layers_size);
-                return;
-            }
-
-            if (config_write_all_keymap_layer(payload, payload_len))
-            {
-                PRINT("Set all layer config: layers=%u\r\n", (unsigned)CONFIG_KEYMAP_LAYERS_NUM);
             }
             break;
         }

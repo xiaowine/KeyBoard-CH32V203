@@ -138,7 +138,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
         scan &= scan - 1; // 清除最低位的 1
     }
 
-    if (config_boot_config_ram.bits.normal_mode)
+    if (config_header_ram.bits.normal_mode)
     {
         if (kb_total > 0 || modifier_bits != 0 || kb_heartbeat_counter == 0)
         {

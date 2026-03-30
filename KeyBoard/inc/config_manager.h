@@ -3,7 +3,7 @@
 
 #include "config.h"
 
-extern ConfigHeader_t config_boot_config_ram;
+extern ConfigHeader_t config_header_ram;
 
 /* Read the config header directly from flash into the caller-provided buffer. */
 void config_read_header(ConfigHeader_t *config);
