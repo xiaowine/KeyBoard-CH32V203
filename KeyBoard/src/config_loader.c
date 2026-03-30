@@ -25,6 +25,8 @@ void config_loader_read_color_path(uint8_t path_index)
 
   const uint8_t *src = &_config_lma[KEYMAP_CONFIG_HEADER_BYTES] + (size_t)path_index * COLOR_PATH_SIZE;
   memcpy(color_ram, src, COLOR_PATH_SIZE);
+  /* Record which color path is currently loaded into RAM. */
+  keymap_boot_config_ram.bits.color_layer = path_index;
 }
 
 static uint8_t config_loader_write_flash_range(const uint32_t data_offset, const uint8_t *data, const uint32_t data_len,
@@ -98,8 +100,8 @@ void config_loader_init(void)
   const uint8_t requested_layer = (uint8_t)keymap_boot_config_ram.bits.boot_layer;
   const uint8_t requested_color = (uint8_t)keymap_boot_config_ram.bits.color_layer;
 
-  keymap_boot_config_ram.bits.boot_layer = -1;
-  keymap_boot_config_ram.bits.color_layer = (uint32_t)-1;
+  /* Do not overwrite the values read from flash here; they represent the
+    desired boot and color layer indices stored in the image. */
 
   if (requested_layer < (uint8_t)KEYMAP_LAYERS)
   {
@@ -118,9 +120,7 @@ void config_loader_init(void)
   {
     config_loader_read_color_path(requested_color);
   }
-
-  PRINT("Keymap loader: boot_layer=%u, color_layer=%d, active_layer=%d, max_layers=%d\r\n",
-        (unsigned)requested_layer, active_color, active_layer, (int)KEYMAP_LAYERS);
+  PRINT("Keymap loader: boot layer=%u, color layer=%u\r\n", (unsigned)active_layer, (unsigned)active_color);
 }
 
 void config_loader_load_layer(const uint8_t layer)

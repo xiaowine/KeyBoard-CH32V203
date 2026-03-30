@@ -271,6 +271,7 @@ static void comm_recv_process(void)
         if (frame_data.seq_num > SEQ_MAX_NUM)
         {
             /* 序号超出协议范围，直接回 ERROR。 */
+            PRINT("comm_recv: frame seq_num %u > SEQ_MAX_NUM\r\n", (unsigned)frame_data.seq_num);
             queue_control_frame(FRAME_TYPE_ERROR);
             return;
         }
@@ -281,9 +282,11 @@ static void comm_recv_process(void)
             frame_data.crc = 0;
             memcpy(words, &frame_data, CRC_BYTES_SIZE);
             CRC_ResetDR();
-            if (frame_crc != CRC_CalcBlockCRC(words, CRC_WORD_SIZE))
+            uint32_t calc_crc = CRC_CalcBlockCRC(words, CRC_WORD_SIZE);
+            if (frame_crc != calc_crc)
             {
                 /* CRC 不匹配：请求对端重发。 */
+                PRINT("comm_recv: CRC mismatch, frame_crc=0x%08X calc_crc=0x%08X\r\n", frame_crc, calc_crc);
                 queue_control_frame(FRAME_TYPE_NACK);
                 receive_handle.retry_count++;
             }
@@ -302,6 +305,7 @@ static void comm_recv_process(void)
                         if (payload_all_len > FRAME_RECV_MAX_BYTES)
                         {
                             /* 总长度超限，拒绝会话。 */
+                            PRINT("comm_recv: START payload_all_len %u > FRAME_RECV_MAX_BYTES\r\n", (unsigned)payload_all_len);
                             queue_control_frame(FRAME_TYPE_ERROR);
                             break;
                         }
@@ -317,6 +321,7 @@ static void comm_recv_process(void)
                             if (receive_handle.payload_buf == NULL)
                             {
                                 /* 内存不足，通知对端错误。 */
+                                PRINT("comm_recv: malloc failed for payload_len=%u\r\n", (unsigned)payload_all_len);
                                 queue_control_frame(FRAME_TYPE_ERROR);
                                 break;
                             }
@@ -355,6 +360,8 @@ static void comm_recv_process(void)
                     if (frame_data.seq_num != (uint8_t)(receive_handle.last_seq_num + 1u) ||
                         receive_handle.expected_payload_len == 0u)
                     {
+                        PRINT("comm_recv: DATA seq mismatch or no active session; seq=%u last=%u expected_len=%u\r\n",
+                              (unsigned)frame_data.seq_num, (unsigned)receive_handle.last_seq_num, (unsigned)receive_handle.expected_payload_len);
                         release_receive_payload_buffer();
                         queue_control_frame(FRAME_TYPE_ERROR);
                         break;
@@ -363,6 +370,7 @@ static void comm_recv_process(void)
                     /* 单帧数据长度必须在 (0, FRAME_PAYLOAD_DATA_SIZE] 范围内。 */
                     if (frame_payload_len == 0u || frame_payload_len > FRAME_PAYLOAD_DATA_SIZE)
                     {
+                        PRINT("comm_recv: DATA invalid payload length=%u\r\n", (unsigned)frame_payload_len);
                         release_receive_payload_buffer();
                         queue_control_frame(FRAME_TYPE_ERROR);
                         break;
@@ -371,6 +379,8 @@ static void comm_recv_process(void)
                     /* 业务类型在整个会话内必须一致。 */
                     if (frame_data.payload.type != receive_handle.payload_type)
                     {
+                        PRINT("comm_recv: DATA payload type mismatch: got=%u expected=%u\r\n",
+                              (unsigned)frame_data.payload.type, (unsigned)receive_handle.payload_type);
                         release_receive_payload_buffer();
                         queue_control_frame(FRAME_TYPE_ERROR);
                         break;
@@ -379,6 +389,9 @@ static void comm_recv_process(void)
                     /* 不能越界写入接收缓存。 */
                     if (frame_payload_len > (uint16_t)(receive_handle.expected_payload_len - receive_handle.received_payload_len))
                     {
+                        PRINT("comm_recv: DATA would overflow buffer: frame_len=%u remaining=%u\r\n",
+                              (unsigned)frame_payload_len,
+                              (unsigned)(receive_handle.expected_payload_len - receive_handle.received_payload_len));
                         release_receive_payload_buffer();
                         queue_control_frame(FRAME_TYPE_ERROR);
                         break;
@@ -387,6 +400,7 @@ static void comm_recv_process(void)
                     /* 有效会话必须已分配缓存。 */
                     if (receive_handle.payload_buf == NULL)
                     {
+                        PRINT("comm_recv: receive buffer NULL before DATA copy\r\n");
                         release_receive_payload_buffer();
                         queue_control_frame(FRAME_TYPE_ERROR);
                         break;

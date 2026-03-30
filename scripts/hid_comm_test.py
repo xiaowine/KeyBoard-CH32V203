@@ -46,8 +46,9 @@ SINGLE_CASE_CHOICES = (
     "get-all-layer-keymap",
     "set-layer",
     "set-layer-keymap",
+    "set-color-layer",
     "set-all-layer-keymap",
-    "set-boot-layer",
+    "set-keymap-boot-config",
 )
 
 _TYPE_DEFAULTS = {
@@ -58,11 +59,13 @@ _TYPE_DEFAULTS = {
     "FRAME_TYPE_NACK": 4,
     "DATA_TYPE_GET_KEY": 0,
     "DATA_TYPE_SET_LAYER": 1,
+    "DATA_TYPE_SET_COLOR_LAYER": 5,
     "DATA_TYPE_GET_LAYER_KEYMAP": 2,
     "DATA_TYPE_SET_LAYER_KEYMAP": 3,
     "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 4,
     "DATA_TYPE_SET_ALL_LAYER_KEYMAP": 15,
-    "DATA_TYPE_SET_BOOT_LAYER": 7,
+    "DATA_TYPE_GET_KEYMAP_BOOT_CONFIG": 0b0110,
+    "DATA_TYPE_SET_KEYMAP_BOOT_CONFIG": 0b0111,
 }
 
 
@@ -116,7 +119,9 @@ DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
 DATA_TYPE_GET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_ALL_LAYER_KEYMAP"]
 DATA_TYPE_SET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_ALL_LAYER_KEYMAP"]
 DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
-DATA_TYPE_SET_BOOT_LAYER = _TYPE_VALUES["DATA_TYPE_SET_BOOT_LAYER"]
+DATA_TYPE_SET_COLOR_LAYER = _TYPE_VALUES.get("DATA_TYPE_SET_COLOR_LAYER", 5)
+DATA_TYPE_SET_KEYMAP_BOOT_CONFIG = _TYPE_VALUES["DATA_TYPE_SET_KEYMAP_BOOT_CONFIG"]
+DATA_TYPE_GET_KEYMAP_BOOT_CONFIG = _TYPE_VALUES["DATA_TYPE_GET_KEYMAP_BOOT_CONFIG"]
 TRANSPORT_TEST_PAYLOAD_TYPE = DATA_TYPE_SET_LAYER
 GET_KEY_EXPECTED_REPLY_LEN = 3
 
@@ -887,7 +892,7 @@ def run_set_boot_layer_test(
     verbose: bool = True,
     diag: Optional[Dict[str, object]] = None,
 ) -> bool:
-    name = "DATA_TYPE_SET_BOOT_LAYER test"
+    name = "DATA_TYPE_SET_KEYMAP_BOOT_CONFIG test"
     if verbose:
         print(f"\n================ {name} ================")
 
@@ -906,7 +911,7 @@ def run_set_boot_layer_test(
         len(payload),
         observe_sec,
         received_all,
-        payload_type=DATA_TYPE_SET_BOOT_LAYER,
+        payload_type=DATA_TYPE_SET_KEYMAP_BOOT_CONFIG,
     ):
         if verbose:
             print_summary(received_all, name)
@@ -921,7 +926,7 @@ def run_set_boot_layer_test(
         observe_sec,
         FRAME_TYPE_ACK,
         received_all,
-        payload_type=DATA_TYPE_SET_BOOT_LAYER,
+        payload_type=DATA_TYPE_SET_KEYMAP_BOOT_CONFIG,
     ):
         if verbose:
             print_summary(received_all, name)
@@ -1042,6 +1047,97 @@ def run_set_layer_test(
             print(f"  FAIL: layer={layer}, saw unexpected extra frame(s) after DATA ACK.")
     if not ok:
         fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for layer={layer}", received_all)
+    return ok
+
+
+def run_set_color_layer_test(
+    h: hid.device,
+    observe_sec: float,
+    verbose: bool = True,
+    diag: Optional[Dict[str, object]] = None,
+) -> bool:
+    name = "DATA_TYPE_SET_COLOR_LAYER test"
+    if verbose:
+        print(f"\n================ {name} ================")
+
+    # Determine number of color paths from header if available
+    root = Path(__file__).resolve().parent.parent
+    cfg_h = root / "KeyBoard" / "inc" / "config_loader.h"
+    try:
+        cfg_text = cfg_h.read_text(encoding="utf-8", errors="ignore")
+        max_paths = _read_define_u32(cfg_text, "MAX_COLOR_PATHS") or 5
+    except OSError:
+        max_paths = 5
+
+    if max_paths <= 0:
+        if verbose:
+            print("  SKIP: MAX_COLOR_PATHS <= 0")
+        fill_diag(diag, "invalid MAX_COLOR_PATHS", [])
+        return False
+
+    color = random.randrange(max_paths)
+    payload = bytes([color])
+    received_all: List[Dict[str, int]] = []
+
+    if not send_start_expect_ack(
+        h,
+        len(payload),
+        observe_sec,
+        received_all,
+        payload_type=DATA_TYPE_SET_COLOR_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: START stage failed for color={color}.")
+        fill_diag(diag, f"START stage failed for color={color}", received_all)
+        return False
+
+    if not send_data_expect_type(
+        h,
+        1,
+        payload,
+        observe_sec,
+        FRAME_TYPE_ACK,
+        received_all,
+        payload_type=DATA_TYPE_SET_COLOR_LAYER,
+    ):
+        if verbose:
+            print_summary(received_all, name)
+            print(f"  FAIL: DATA stage failed for color={color}.")
+        fill_diag(diag, f"DATA stage failed for color={color}", received_all)
+        return False
+
+    extra_frames: List[Dict[str, int]] = []
+    t0 = time.time()
+    end_t = t0 + max(0.25, observe_sec)
+    while time.time() < end_t:
+        buf = read_frame(h, timeout_ms=READ_TIMEOUT_MS)
+        if buf is None:
+            continue
+
+        parsed = parse_frame(buf)
+        if parsed is None:
+            continue
+
+        parsed["t_ms"] = int((time.time() - t0) * 1000)
+        received_all.append(parsed)
+        extra_frames.append(parsed)
+        if verbose:
+            print(
+                f"[{parsed['t_ms']:>4} ms] 收到额外帧 type={type_name(parsed['type'])}, "
+                f"seq={parsed['seq']}, payload_len={parsed['payload_len']}, payload_type={parsed['payload_type']}"
+            )
+        send_ack_for_peer(h, parsed["seq"])
+
+    ok = not extra_frames
+    if verbose:
+        print_summary(received_all, name)
+        if ok:
+            print(f"  PASS: color={color}, completed START/DATA/ACK flow with no extra reply.")
+        else:
+            print(f"  FAIL: color={color}, saw unexpected extra frame(s) after DATA ACK.")
+    if not ok:
+        fill_diag(diag, f"unexpected extra frame(s) after DATA ACK for color={color}", received_all)
     return ok
 
 
@@ -1889,6 +1985,14 @@ def main() -> int:
                         ),
                     ),
                     (
+                        "set-color-layer",
+                        "DATA_TYPE_SET_COLOR_LAYER test",
+                        lambda: run_set_color_layer_test(
+                            h,
+                            args.observe_sec,
+                        ),
+                    ),
+                    (
                         "set-layer-keymap",
                         "DATA_TYPE_SET_LAYER_KEYMAP test",
                         lambda: run_set_layer_keymap_test(
@@ -1905,8 +2009,8 @@ def main() -> int:
                         ),
                     ),
                     (
-                        "set-boot-layer",
-                        "DATA_TYPE_SET_BOOT_LAYER test",
+                        "set-keymap-boot-config",
+                        "DATA_TYPE_SET_KEYMAP_BOOT_CONFIG test",
                         lambda: run_set_boot_layer_test(
                             h,
                             args.observe_sec,
