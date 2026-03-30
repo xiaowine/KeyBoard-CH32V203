@@ -60,7 +60,6 @@ _TYPE_DEFAULTS = {
     "DATA_TYPE_SET_LAYER": 1,
     "DATA_TYPE_GET_LAYER_KEYMAP": 2,
     "DATA_TYPE_SET_LAYER_KEYMAP": 3,
-    "DATA_TYPE_GET_ALL_LAYER_KEYMAP": 4,
     "DATA_TYPE_SET_HEADER": 7,
 }
 
@@ -112,7 +111,6 @@ FRAME_TYPE_NACK = _TYPE_VALUES["FRAME_TYPE_NACK"]
 DATA_TYPE_SET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_SET_LAYER_KEYMAP"]
 DATA_TYPE_GET_KEY = _TYPE_VALUES["DATA_TYPE_GET_KEY"]
 DATA_TYPE_GET_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_LAYER_KEYMAP"]
-DATA_TYPE_GET_ALL_LAYER_KEYMAP = _TYPE_VALUES["DATA_TYPE_GET_ALL_LAYER_KEYMAP"]
 DATA_TYPE_SET_LAYER = _TYPE_VALUES["DATA_TYPE_SET_LAYER"]
 DATA_TYPE_SET_HEADER = _TYPE_VALUES["DATA_TYPE_SET_HEADER"]
 TRANSPORT_TEST_PAYLOAD_TYPE = DATA_TYPE_SET_LAYER
@@ -1599,7 +1597,6 @@ def run_continuous_stress_test(
 
     get_key_req_payload = _build_stress_query_request_payload(DATA_TYPE_GET_KEY)
     get_layer_req_payload = _build_stress_query_request_payload(DATA_TYPE_GET_LAYER_KEYMAP)
-    get_all_req_payload = _build_stress_query_request_payload(DATA_TYPE_GET_ALL_LAYER_KEYMAP)
 
     steps: List[Tuple[str, Callable[[Dict[str, object]], bool]]] = [
         (
@@ -1624,19 +1621,6 @@ def run_continuous_stress_test(
                 "DATA_TYPE_GET_LAYER_KEYMAP chunked request test",
                 expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
                 request_payload=get_layer_req_payload,
-                verbose=False,
-                diag=d,
-            ),
-        ),
-        (
-            "GET_ALL_LAYER_KEYMAP",
-            lambda d: run_chunked_query_request_expect_reply(
-                h,
-                observe_sec,
-                DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-                "DATA_TYPE_GET_ALL_LAYER_KEYMAP chunked request test",
-                expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
-                request_payload=get_all_req_payload,
                 verbose=False,
                 diag=d,
             ),
@@ -1787,17 +1771,6 @@ def main() -> int:
                             DATA_TYPE_GET_LAYER_KEYMAP,
                             "DATA_TYPE_GET_LAYER_KEYMAP test",
                             expected_reply_len=LAYER_KEYMAP_REPLY_LEN,
-                        ),
-                    ),
-                    (
-                        "get-all-layer-keymap",
-                        "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
-                        lambda: run_zero_len_request_expect_reply(
-                            h,
-                            args.observe_sec,
-                            DATA_TYPE_GET_ALL_LAYER_KEYMAP,
-                            "DATA_TYPE_GET_ALL_LAYER_KEYMAP test",
-                            expected_reply_len=ALL_LAYER_KEYMAP_REPLY_LEN,
                         ),
                     ),
                     (

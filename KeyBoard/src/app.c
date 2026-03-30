@@ -202,17 +202,6 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)active_keymap, layer_size);
             break;
         }
-    case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
-        {
-            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
-            // NOLINTNEXTLINE(*-reserved-identifier)
-            extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 config_image.o 中 */
-            const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
-            const uint8_t* flash_base = &_config_lma[0];
-            const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t);
-            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (CONFIG_KEYMAP_LAYERS_NUM));
-            break;
-        }
     case DATA_TYPE_SET_LAYER:
         {
             uint8_t layer = 0;

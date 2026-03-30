@@ -55,8 +55,6 @@ typedef enum
     DATA_TYPE_GET_KEY = 0b0000,
     /** 读取当前层按键映射。 */
     DATA_TYPE_GET_LAYER_KEYMAP = 0b0010,
-    /** 读取全部层按键映射。 */
-    DATA_TYPE_GET_ALL_LAYER_KEYMAP = 0b0100,
     /** 设置当前层。 */
     DATA_TYPE_SET_LAYER = 0b0001,
     /** 设置配置头 */
