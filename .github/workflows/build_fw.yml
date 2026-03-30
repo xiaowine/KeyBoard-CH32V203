@@ -14,8 +14,8 @@ jobs:
 
       - name: Install Build Essentials
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake make gcc-multilib libncurses5
+          sudo apt-get install -y --no-install-recommends cmake build-essential jq xz-utils tar pkg-config
+          cmake --version
 
       - name: Cache Toolchain
         id: cache-mrs
@@ -37,8 +37,8 @@ jobs:
         run: |
           # 关键：将解压后的绝对路径传给环境变量 TOOLCHAIN_FOLDER
           export TOOLCHAIN_FOLDER=$(pwd)/mrs_toolchain
-          cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
-          cmake --build build -j$(nproc)
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j$(nproc)
 
       - name: Upload Artifacts
         uses: actions/upload-artifact@v7
