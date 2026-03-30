@@ -1,5 +1,5 @@
-#ifndef KEYBOARD_KEYMAP_H
-#define KEYBOARD_KEYMAP_H
+#ifndef KEYBOARD_CONFIG_H
+#define KEYBOARD_CONFIG_H
 #include "key.h"
 #include "utils.h"
 
@@ -15,25 +15,14 @@
 
 typedef struct __attribute__((packed))
 {
-    /* modifiers: 8-bit bitmask,
-       Bit mapping follows standard HID modifier bitmap:
-         bit0: Left Ctrl  (0x01)
-         bit1: Left Shift (0x02)
-         bit2: Left Alt   (0x04)
-         bit3: Left GUI   (0x08)
-         bit4: Right Ctrl (0x10)
-         bit5: Right Shift(0x20)
-         bit6: Right Alt  (0x40)
-         bit7: Right GUI  (0x80)
-    */
-    uint8_t modifiers;
-    uint16_t codes[MAX_CODE];
-    uint8_t type;
+  uint8_t modifiers;
+  uint16_t codes[MAX_CODE];
+  uint8_t type;
 } KeyMapping;
 
-extern KeyMapping keymap_active[KEY_TOTAL_KEYS];
+extern KeyMapping config_active[KEY_TOTAL_KEYS];
 
-uint8_t keymap_get_count(const KeyMapping *m);
+uint8_t config_get_count(const KeyMapping *m);
 
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 
