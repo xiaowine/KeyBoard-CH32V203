@@ -132,7 +132,7 @@ def load_keymap_reply_sizes() -> Tuple[int, int, int]:
     root = Path(__file__).resolve().parent.parent
     key_h = root / "KeyBoard" / "inc" / "key.h"
     keymap_h = root / "KeyBoard" / "inc" / "keymap.h"
-    keymap_loader_h = root / "KeyBoard" / "inc" / "keymap_loader.h"
+    keymap_loader_h = root / "KeyBoard" / "inc" / "config_loader.h"
 
     hc165_count = 3
     key_total_keys = 24

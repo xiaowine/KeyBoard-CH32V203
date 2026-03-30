@@ -7,7 +7,7 @@
 #include "usb_lib.h"
 #include "usb_desc.h"
 #include "keymap.h"
-#include "keymap_loader.h"
+#include "config_loader.h"
 #include "rgb_led.h"
 
 volatile key_scan_state_t key_scan_state = KEY_STATE_IDLE;
@@ -23,12 +23,6 @@ volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
 Gradient rgb_gradient = {0};
-const Color gradient_path[] = {
-    {48, 25, 52},
-    {255, 140, 0},
-    {32, 160, 255},
-    {48, 25, 52}
-};
 
 void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
@@ -38,7 +32,7 @@ void app_init(void)
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
 
     /* 按 FLASH 中的掩码（KEYMAP_BOOT_CONFIG）选择性加载 keymap 层到 RAM */
-    keymap_loader_init();
+    config_loader_init();
 
     // 编码器初始化（TIM）
     encode_init();
@@ -48,7 +42,7 @@ void app_init(void)
 
     // RGB 初始化
     rgb_led_init();
-    start_gradient(&rgb_gradient, gradient_path, (uint8_t)(sizeof(gradient_path) / sizeof(gradient_path[0])), 600, 1U);
+    start_gradient(&rgb_gradient, color_ram, (uint8_t)(sizeof(color_ram) / sizeof(color_ram[0])), 600, 1U);
     // TIM 初始化
     {
         RCC_APB2PeriphClockCmd(KEYSCAN_TIM_RCC, ENABLE);
@@ -88,7 +82,6 @@ void app_init(void)
         TIM_ITConfig(KEYSCAN_TIM, TIM_IT_Update, ENABLE);
         TIM_Cmd(KEYSCAN_TIM, ENABLE);
 
-        // TIM2 已移除：改用 TIM1 的中断来产生额外的 5ms 定时标志
     }
     Set_USB_Clock();
     USB_Init();
@@ -218,7 +211,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             {
                 return;
             }
-            keymap_loader_load_layer(layer);
+            config_loader_load_layer(layer);
             break;
         }
     case DATA_TYPE_SET_BOOT_LAYER:
@@ -235,9 +228,9 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             }
             KeymapBootConfig keymap_boot_config = {0};
 
-            keymap_loader_read_boot_config(&keymap_boot_config);
+            config_loader_read_boot_config(&keymap_boot_config);
             keymap_boot_config.bits.boot_layer = layer;
-            if (keymap_loader_write_boot_config(&keymap_boot_config))
+            if (config_loader_write_boot_config(&keymap_boot_config))
             {
                 PRINT("Set boot layer: %u\r\n", (unsigned)layer);
             }
@@ -261,7 +254,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
                 return;
             }
 
-            if (keymap_loader_write_layer((uint8_t)active_layer, payload, payload_len))
+            if (config_loader_write_layer((uint8_t)active_layer, payload, payload_len))
             {
                 PRINT("Set layer keymap: layer=%u\r\n", (unsigned)active_layer);
             }
@@ -278,7 +271,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
                 return;
             }
 
-            if (keymap_loader_write_all_layers(payload, payload_len))
+            if (config_loader_write_all_layers(payload, payload_len))
             {
                 PRINT("Set all layer keymap: layers=%u\r\n", (unsigned)KEYMAP_LAYERS);
             }

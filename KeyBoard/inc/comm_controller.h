@@ -48,7 +48,7 @@ typedef enum
     FRAME_TYPE_NACK = 4u
 } FRAME_TYPE;
 
-/** @brief 业务数据类型定义，由上层回调解释。 */
+/** @brief 业务数据类型定义，由上层回调解释。值末尾0表示获取数据，1表示设置数据 */
 typedef enum
 {
     /** 读取按键快照。 */
