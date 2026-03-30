@@ -4,7 +4,7 @@
 #include "utils.h"
 #include <string.h>
 #include <stdbool.h>
-#include "config_loader.h"
+#include "config_manager.h"
 
 // 记录上一次合并的按键位掩码，用于检测扫描间的变化
 static uint32_t prev_keys = 0;

@@ -1,5 +1,10 @@
 #include "utils.h"
 
+#include "config.h"
+
+extern uint8_t _config_lma[]; // NOLINT(*-reserved-identifier)
+
+
 // De Bruijn 序列表 (长度 32)
 //
 // 说明：
@@ -57,4 +62,11 @@ uint8_t km_get_code_count(const Key_Map_t* m)
             return i;
     }
     return MAX_CODE;
+}
+
+const uint8_t* config_key_map_layer_address(const uint8_t layer)
+{
+    const uint8_t* flash_base = &_config_lma[0];
+    const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t);
+    return layers_src + layer * CONFIG_KEYMAP_LAYER_BYTE;
 }

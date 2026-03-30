@@ -7,7 +7,7 @@
 #include "usb_lib.h"
 #include "usb_desc.h"
 #include "key_map.h"
-#include "config_loader.h"
+#include "config_manager.h"
 #include "rgb.h"
 
 volatile key_Scan_State_t key_scan_state = KEY_STATE_IDLE;
@@ -38,7 +38,7 @@ void app_init(void)
     RCC_AHBPeriphClockCmd(RCC_AHBPeriph_CRC, ENABLE);
 
     /* 按 FLASH 中的掩码（CONFIG_BOOT_CONFIG）选择性加载层到 RAM */
-    config_loader_init();
+    config_manager_init();
 
     // 编码器初始化（TIM）
     encode_init();
@@ -222,7 +222,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             {
                 return;
             }
-            config_loader_load_layer(layer);
+            config_load_key_map_layer(layer);
             break;
         }
     case DATA_TYPE_SET_BOOT_LAYER:
@@ -239,9 +239,9 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             }
             ConfigHeader_t config_boot_config = {0};
 
-            config_loader_read_boot_config(&config_boot_config);
+            config_read_header(&config_boot_config);
             config_boot_config.bits.boot_layer = layer;
-            if (config_loader_write_boot_config(&config_boot_config))
+            if (config_write_header(&config_boot_config))
             {
                 PRINT("Set boot layer: %u\r\n", (unsigned)layer);
             }
@@ -264,7 +264,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
                 return;
             }
 
-            if (config_loader_write_layer((uint8_t)active_layer, payload, payload_len))
+            if (config_write_key_map_layer((uint8_t)active_layer, payload, payload_len))
             {
                 PRINT("Set layer config: layer=%u\r\n", (unsigned)active_layer);
             }
@@ -281,7 +281,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
                 return;
             }
 
-            if (config_loader_write_all_layers(payload, payload_len))
+            if (config_write_all_key_map_layer(payload, payload_len))
             {
                 PRINT("Set all layer config: layers=%u\r\n", (unsigned)CONFIG_KEYMAP_LAYERS_NUM);
             }
