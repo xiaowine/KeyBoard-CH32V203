@@ -19,12 +19,14 @@ uint8_t is_debug_mode = 0;
 uint8_t next_sample_slot = 0;
 volatile uint8_t active_sample_slot = 0;
 volatile uint8_t scan_timeout_ticks = 0;
-volatile uint8_t time1ms_tick = 0;
-volatile uint8_t time5ms_tick = 0;
+volatile uint8_t tick1ms_counter = 0;
+volatile uint8_t ms1_tick = 0;
+volatile uint8_t tick5ms_counter = 0;
+volatile uint8_t ms5_tick = 0;
 
 Gradient rgb_gradient = {0};
 
-void app_comm_rx_callback(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
+void app_comm_rx_callback(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
 void app_init(void)
 {
@@ -124,12 +126,12 @@ void app_run(void)
         break;
     }
 
-    if (time1ms_tick)
+    if (ms1_tick)
     {
         kb_send_snapshot(last_snapshot);
-        time1ms_tick = 0;
+        ms1_tick = 0;
     }
-    if (time5ms_tick)
+    if (ms5_tick)
     {
         comm_controller_process();
         Color next_color;
@@ -137,7 +139,7 @@ void app_run(void)
         {
             rgb_led_set_color(next_color.r, next_color.g, next_color.b);
         }
-        time5ms_tick = 0;
+        ms5_tick = 0;
     }
 }
 
@@ -145,13 +147,16 @@ RAM INTF void TIM1_UP_IRQHandler(void)
 {
     if (TIM_GetITStatus(KEYSCAN_TIM, TIM_IT_Update) == SET)
     {
-        time1ms_tick = 1;
-        // 由 TIM1 额外产生 5ms 标志（每 5 个 update 触发一次）
-        static uint8_t tick5ms_counter = 0;
+        tick1ms_counter++;
         tick5ms_counter++;
-        if (tick5ms_counter >= 5)
+        if (tick1ms_counter >= MS_TICK)
         {
-            time5ms_tick = 1;
+            ms1_tick = 1;
+            tick1ms_counter = 0;
+        }
+        if (tick5ms_counter >= MS_TICK * 5)
+        {
+            ms5_tick = 1;
             tick5ms_counter = 0;
         }
         /* 如果当前空闲，启动新的扫描 */
@@ -171,130 +176,130 @@ RAM INTF void TIM1_UP_IRQHandler(void)
     }
 }
 
-void app_comm_rx_callback(const uint8_t payload_type, const uint8_t *payload, const uint16_t payload_len)
+void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, const uint16_t payload_len)
 {
     switch (payload_type)
     {
     case DATA_TYPE_GET_KEY:
-    {
-        comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
-        break;
-    }
+        {
+            comm_queue_reply(DATA_TYPE_GET_KEY, last_snapshot, HC165_COUNT);
+            break;
+        }
     case DATA_TYPE_GET_LAYER_KEYMAP:
-    {
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-        /* 发送当前运行时已加载的一层（位于 keymap_active） */
-        comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t *)keymap_active, layer_size);
-        break;
-    }
+        {
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            /* 发送当前运行时已加载的一层（位于 keymap_active） */
+            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)keymap_active, layer_size);
+            break;
+        }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
-    {
-        /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
-        // NOLINTNEXTLINE(*-reserved-identifier)
-        extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-        const uint8_t *flash_base = &_config_lma[0];
-        const uint8_t *layers_src = flash_base + sizeof(KeymapBootConfig);
-        comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
-        break;
-    }
+        {
+            /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
+            // NOLINTNEXTLINE(*-reserved-identifier)
+            extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 keymap_image.o 中 */
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
+            const uint8_t* flash_base = &_config_lma[0];
+            const uint8_t* layers_src = flash_base + sizeof(KeymapBootConfig);
+            comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (KEYMAP_LAYERS));
+            break;
+        }
     case DATA_TYPE_SET_LAYER:
-    {
-        uint8_t layer = 0;
-        if (payload_len < sizeof(layer))
         {
-            return;
+            uint8_t layer = 0;
+            if (payload_len < sizeof(layer))
+            {
+                return;
+            }
+            memcpy(&layer, payload, sizeof(layer));
+            if (layer >= KEYMAP_LAYERS)
+            {
+                return;
+            }
+            config_loader_load_layer(layer);
+            break;
         }
-        memcpy(&layer, payload, sizeof(layer));
-        if (layer >= KEYMAP_LAYERS)
-        {
-            return;
-        }
-        config_loader_load_layer(layer);
-        break;
-    }
     case DATA_TYPE_SET_COLOR_LAYER:
-    {
-        uint8_t color = 0;
-        if (payload_len < sizeof(color))
         {
-            return;
+            uint8_t color = 0;
+            if (payload_len < sizeof(color))
+            {
+                return;
+            }
+            memcpy(&color, payload, sizeof(color));
+            if (color >= MAX_COLOR_PATHS)
+            {
+                return;
+            }
+            config_loader_read_color_path(color);
+            start_gradient(&rgb_gradient, color_ram, (uint8_t)(sizeof(color_ram) / sizeof(color_ram[0])), 600, 1U);
+            break;
         }
-        memcpy(&color, payload, sizeof(color));
-        if (color >= MAX_COLOR_PATHS)
-        {
-            return;
-        }
-        config_loader_read_color_path(color);
-        start_gradient(&rgb_gradient, color_ram, (uint8_t)(sizeof(color_ram) / sizeof(color_ram[0])), 600, 1U);
-        break;
-    }
     case DATA_TYPE_SET_KEYMAP_BOOT_CONFIG:
-    {
-        if (payload_len != sizeof(KeymapBootConfig))
         {
-            PRINT("Set keymap boot config: invalid payload length %u, expected %u\r\n",
-                  (unsigned)payload_len, (unsigned)sizeof(KeymapBootConfig));
-            return;
-        }
+            if (payload_len != sizeof(KeymapBootConfig))
+            {
+                PRINT("Set keymap boot config: invalid payload length %u, expected %u\r\n",
+                      (unsigned)payload_len, (unsigned)sizeof(KeymapBootConfig));
+                return;
+            }
 
-        KeymapBootConfig cfg;
-        memcpy(&cfg, payload, sizeof(cfg));
-        if (config_loader_write_boot_config(&cfg))
-        {
-            PRINT("Set keymap boot config: written\r\n");
+            KeymapBootConfig cfg;
+            memcpy(&cfg, payload, sizeof(cfg));
+            if (config_loader_write_boot_config(&cfg))
+            {
+                PRINT("Set keymap boot config: written\r\n");
+            }
+            break;
         }
-        break;
-    }
 
     case DATA_TYPE_GET_KEYMAP_BOOT_CONFIG:
-    {
-        KeymapBootConfig cfg = {0};
-        config_loader_read_boot_config(&cfg);
-        comm_queue_reply(DATA_TYPE_GET_KEYMAP_BOOT_CONFIG, (uint8_t *)&cfg, sizeof(cfg));
-        break;
-    }
+        {
+            KeymapBootConfig cfg = {0};
+            config_loader_read_boot_config(&cfg);
+            comm_queue_reply(DATA_TYPE_GET_KEYMAP_BOOT_CONFIG, (uint8_t*)&cfg, sizeof(cfg));
+            break;
+        }
     case DATA_TYPE_SET_LAYER_KEYMAP:
-    {
-        const int active_layer = keymap_boot_config_ram.bits.boot_layer;
-        const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
-
-        if ((active_layer < 0) || (active_layer >= KEYMAP_LAYERS))
         {
-            PRINT("Set layer keymap: no active layer\r\n");
-            return;
-        }
+            const int active_layer = keymap_boot_config_ram.bits.boot_layer;
+            const uint16_t layer_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS;
 
-        if (payload_len != layer_size)
-        {
-            PRINT("Set layer keymap: invalid payload length %u, expected %u\r\n",
-                  (unsigned)payload_len, (unsigned)layer_size);
-            return;
-        }
+            if ((active_layer < 0) || (active_layer >= KEYMAP_LAYERS))
+            {
+                PRINT("Set layer keymap: no active layer\r\n");
+                return;
+            }
 
-        if (config_loader_write_layer((uint8_t)active_layer, payload, payload_len))
-        {
-            PRINT("Set layer keymap: layer=%u\r\n", (unsigned)active_layer);
+            if (payload_len != layer_size)
+            {
+                PRINT("Set layer keymap: invalid payload length %u, expected %u\r\n",
+                      (unsigned)payload_len, (unsigned)layer_size);
+                return;
+            }
+
+            if (config_loader_write_layer((uint8_t)active_layer, payload, payload_len))
+            {
+                PRINT("Set layer keymap: layer=%u\r\n", (unsigned)active_layer);
+            }
+            break;
         }
-        break;
-    }
     case DATA_TYPE_SET_ALL_LAYER_KEYMAP:
-    {
-        const uint16_t all_layers_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS;
-
-        if (payload_len != all_layers_size)
         {
-            PRINT("Set all layer keymap: invalid payload length %u, expected %u\r\n",
-                  (unsigned)payload_len, (unsigned)all_layers_size);
-            return;
-        }
+            const uint16_t all_layers_size = sizeof(KeyMapping) * KEY_TOTAL_KEYS * KEYMAP_LAYERS;
 
-        if (config_loader_write_all_layers(payload, payload_len))
-        {
-            PRINT("Set all layer keymap: layers=%u\r\n", (unsigned)KEYMAP_LAYERS);
+            if (payload_len != all_layers_size)
+            {
+                PRINT("Set all layer keymap: invalid payload length %u, expected %u\r\n",
+                      (unsigned)payload_len, (unsigned)all_layers_size);
+                return;
+            }
+
+            if (config_loader_write_all_layers(payload, payload_len))
+            {
+                PRINT("Set all layer keymap: layers=%u\r\n", (unsigned)KEYMAP_LAYERS);
+            }
+            break;
         }
-        break;
-    }
     default:
         break;
     }

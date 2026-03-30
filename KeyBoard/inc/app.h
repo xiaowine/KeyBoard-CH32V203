@@ -2,6 +2,7 @@
 #define KEYBOARD_APP_H
 
 #define KEYBOARD_SCAN_FREQUENCY_HZ 3000U
+#define MS_TICK (KEYBOARD_SCAN_FREQUENCY_HZ/1000U)
 
 /* 定时器命名统一 (键盘扫描定时器) */
 #define KEYSCAN_TIM TIM1
