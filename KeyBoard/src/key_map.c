@@ -1,10 +1,10 @@
 #include "key_map.h"
 #include "key_scan.h"
 #include "usb_endp.h"
-#include "utils.h"
 #include <string.h>
 #include <stdbool.h>
 #include "config_manager.h"
+#include "utils.h"
 
 // 记录上一次合并的按键位掩码，用于检测扫描间的变化
 static uint32_t prev_keys = 0;
@@ -12,7 +12,7 @@ static uint16_t kb_heartbeat_counter = 0;
 
 /* 运行时单层缓冲区：loader 将把选中的 layer 拷贝到此处 */
 
-Key_Map_t config_active[TOTAL_KEYS] LINK_AND_AL(".data", 4);
+Key_Map_t active_key_map[TOTAL_KEYS] LINK_AND_AL(".data", 4);
 
 /**
  * 核心发送逻辑：扫描 -> 收集 -> 分组 -> 发送
@@ -62,7 +62,7 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     uint8_t mouse_buttons_mask = 0; /* bits 0..4 */
     int16_t mouse_wheel_sum = 0;
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
-    const Key_Map_t* km = config_active;
+    const Key_Map_t* km = active_key_map;
     uint32_t scan = keys;
     while (scan)
     {

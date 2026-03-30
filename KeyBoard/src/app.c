@@ -25,13 +25,14 @@ volatile uint8_t tick5ms_counter = 0;
 volatile uint8_t ms5_tick = 0;
 
 Gradient_t rgb_Gradient_t = {0};
-const Color_t Gradient_t_path[] = {
+const RGB_Color_t Gradient_t_path[] = {
     {48, 25, 52},
     {255, 140, 0},
     {32, 160, 255},
     {48, 25, 52}
 };
 
+extern Key_Map_t active_key_map[TOTAL_KEYS];
 void app_init(void)
 {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
@@ -141,7 +142,7 @@ void app_run(void)
     if (ms5_tick)
     {
         comm_controller_process();
-        Color_t next_Color_t;
+        RGB_Color_t next_Color_t;
         if (update_Gradient_t(&rgb_Gradient_t, &next_Color_t) != 0U)
         {
             rgb_set_color_t(next_Color_t.r, next_Color_t.g, next_Color_t.b);
@@ -196,7 +197,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
         {
             const uint16_t layer_size = sizeof(Key_Map_t) * TOTAL_KEYS;
             /* 发送当前运行时已加载的一层（位于 config_active） */
-            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)config_active, layer_size);
+            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)active_key_map, layer_size);
             break;
         }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:

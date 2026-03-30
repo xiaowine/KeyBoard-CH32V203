@@ -2,7 +2,8 @@
 #define KEYBOARD_RGB_H
 
 #include <stdint.h>
-#include "utils.h"
+#include "common.h"
+#include "config.h"
 
 #define rgb_PIN GPIO_Pin_7
 #define rgb_PORT GPIOA
@@ -22,11 +23,11 @@ typedef struct PACKED
     uint8_t r;
     uint8_t g;
     uint8_t b;
-} Color_t;
+} RGB_Color_t;
 
 typedef struct
 {
-    const Color_t *path;
+    const RGB_Color_t* path;
     uint8_t path_len;
     uint8_t seg_idx;
     uint8_t loop;
@@ -41,12 +42,15 @@ typedef struct
     int32_t step_b;
 } Gradient_t;
 
+// extern RGB_Color_t active_rgb_color[CONFIG_RGB_COLOR_PATH_NUM];
+
 void rgb_init(void);
 void rgb_set_color_t(uint8_t r, uint8_t g, uint8_t b);
 void rgb_set_brightness(uint8_t brightness);
 uint8_t rgb_is_busy(void);
 
-void start_Gradient_t(Gradient_t *grad, const Color_t *path, uint8_t path_len, uint16_t steps_per_segment, uint8_t loop);
-uint8_t update_Gradient_t(Gradient_t *grad, Color_t *out_Color_t);
+void start_Gradient_t(Gradient_t* grad, const RGB_Color_t* path, uint8_t path_len, uint16_t steps_per_segment,
+                      uint8_t loop);
+uint8_t update_Gradient_t(Gradient_t* grad, RGB_Color_t* out_Color_t);
 
 #endif

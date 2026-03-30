@@ -71,9 +71,9 @@ file(GLOB SRC_FILES
 )
 
 list(APPEND SRC_FILES
-        "board/startup_ch32v20x_D6.S"
+        "board/startup.S"
 )
-set(COMMON_RISCV_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -flto -pipe -Wunused -Wuninitialized -g")
+set(COMMON_RISCV_FLAGS " -march=rv32imacxw -mabi=ilp32 -msmall-data-limit=8 -msave-restore -fmax-errors=20 -Ofast -fmessage-length=0 -fsigned-char -ffunction-sections -fdata-sections -fno-common -pipe -Wunused -Wuninitialized -g")
 set(RTL_DUMP_FLAGS "-fdump-rtl-expand")
 
 set(CMAKE_C_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu11 ${RTL_DUMP_FLAGS}")

@@ -1,8 +1,7 @@
 #include "debug.h"
 #include "app.h"
-#include "comm_controller.h"
 #include "usb_lib.h"
-#include "utils.h"
+#include "common.h"
 /* Global typedef */
 
 /* Global define */

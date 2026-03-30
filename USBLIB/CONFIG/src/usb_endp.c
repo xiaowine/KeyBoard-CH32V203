@@ -13,7 +13,7 @@
 #include "usb_desc.h"
 #include "usb_istr.h"
 #include <string.h>
-#include "utils.h"
+#include "common.h"
 
 volatile uint8_t USBD_EndpBusy[EP_NUM + 1]; /* index 0 unused, use 1..EP_NUM */
 volatile uint8_t CUSTOM_Rx_Cnt = 0;

@@ -1,14 +1,17 @@
 #include "rgb.h"
 #include "debug.h"
+#include "common.h"
 #include "utils.h"
 
 static uint8_t s_brightness = 80U;
-static Color_t s_last_rgb = {0U, 0U, 0U};
+static RGB_Color_t s_last_rgb = {0U, 0U, 0U};
 static uint16_t s_dma_frame[WS2812_FRAME_LEN] = {0U};
 static volatile uint8_t s_dma_busy = 0U;
 static uint16_t s_period_ticks = 0U;
 static uint16_t s_t0h_ticks = 0U;
 static uint16_t s_t1h_ticks = 0U;
+
+RGB_Color_t active_rgb_color[CONFIG_RGB_COLOR_PATH_NUM] = {0};
 
 void rgb_init(void)
 {
@@ -72,7 +75,7 @@ void rgb_init(void)
     rgb_set_color_t(0, 0, 0);
 }
 
-void rgb_build_frame(uint8_t r, uint8_t g, uint8_t b)
+void rgb_build_frame(const uint8_t r, const uint8_t g, const uint8_t b)
 {
     uint8_t i = 0;
     const uint8_t sr = scale8_by_255(r, s_brightness);
@@ -129,10 +132,10 @@ uint8_t rgb_is_busy(void)
     return s_dma_busy;
 }
 
-static void Gradient_t_prepare_segment(Gradient_t* grad, const uint8_t seg_idx)
+void Gradient_t_prepare_segment(Gradient_t* grad, const uint8_t seg_idx)
 {
-    const Color_t* start = &grad->path[seg_idx];
-    const Color_t* end = &grad->path[seg_idx + 1U];
+    const RGB_Color_t* start = &grad->path[seg_idx];
+    const RGB_Color_t* end = &grad->path[seg_idx + 1U];
 
     grad->seg_idx = seg_idx;
     grad->cur_r = (int32_t)start->r << 8;
@@ -144,8 +147,8 @@ static void Gradient_t_prepare_segment(Gradient_t* grad, const uint8_t seg_idx)
     grad->remaining_steps = grad->steps_per_segment;
 }
 
-void start_Gradient_t(Gradient_t* grad, const Color_t* path, const uint8_t path_len, uint16_t steps_per_segment,
-                    const uint8_t loop)
+void start_Gradient_t(Gradient_t* grad, const RGB_Color_t* path, const uint8_t path_len, uint16_t steps_per_segment,
+                      const uint8_t loop)
 {
     if (grad == 0 || path == 0 || path_len < 2U)
     {
@@ -166,7 +169,7 @@ void start_Gradient_t(Gradient_t* grad, const Color_t* path, const uint8_t path_
     Gradient_t_prepare_segment(grad, 0U);
 }
 
-uint8_t update_Gradient_t(Gradient_t* grad, Color_t* out_Color_t)
+uint8_t update_Gradient_t(Gradient_t* grad, RGB_Color_t* out_Color_t)
 {
     if ((grad == 0) || (out_Color_t == 0) || (grad->is_running == 0U))
     {

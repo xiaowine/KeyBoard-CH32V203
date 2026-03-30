@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
-#include "utils.h"
+#include "common.h"
 
 /**
  * @brief 参与 CRC 计算的 32 位字数量。

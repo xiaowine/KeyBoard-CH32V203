@@ -6,55 +6,75 @@
 #include "utils.h"
 
 extern uint8_t _config_lma[]; // NOLINT(*-reserved-identifier)
+extern Key_Map_t active_key_map[TOTAL_KEYS];
+extern RGB_Color_t active_rgb_color[CONFIG_RGB_COLOR_PATH_NUM];
 
 ConfigHeader_t config_boot_config_ram = {0};
-static uint32_t config_flash_shadow_words[CONFIG_FLASH_BYTE / sizeof(uint32_t)] = {0};
+
+uint32_t config_flash_shadow_words[CONFIG_FLASH_BYTE / sizeof(uint32_t)] = {0};
 
 void config_manager_init(void)
 {
     const size_t layer_size = CONFIG_KEYMAP_LAYER_BYTE;
 
-    memset(config_active, 0, layer_size);
+    memset(active_key_map, 0, layer_size);
     config_read_header(&config_boot_config_ram);
 
-    const uint8_t requested_layer = (uint8_t)config_boot_config_ram.bits.boot_layer;
-    const uint8_t ver_cfg = (uint8_t)config_boot_config_ram.bits.ver;
+    const uint8_t requested_key_map_layer = config_boot_config_ram.bits.boot_layer;
+    const uint8_t requested_rgb_color_layer = config_boot_config_ram.bits.rgb_color_layer;
 
     config_boot_config_ram.bits.boot_layer = -1;
+    config_boot_config_ram.bits.rgb_color_layer = -1;
 
-    if (requested_layer < (uint8_t)CONFIG_KEYMAP_LAYERS_NUM)
+    if (config_load_key_map_layer(requested_key_map_layer))
     {
-        config_load_key_map_layer(requested_layer);
-    }
-    else
-    {
-        PRINT("Config loader: boot layer %u out of range, skip loading\r\n", (unsigned)requested_layer);
+        config_boot_config_ram.bits.boot_layer = requested_key_map_layer;
     }
 
-    const int active_layer = config_boot_config_ram.bits.boot_layer;
+    if (config_load_rgb_color_layer(requested_rgb_color_layer))
+    {
+        config_boot_config_ram.bits.rgb_color_layer = requested_rgb_color_layer;
+    }
 
-    PRINT("Config loader: boot_layer=%u, ver_cfg=0x%X, active_layer=%d, max_layers=%d\r\n",
-          (unsigned)requested_layer, (unsigned)ver_cfg, active_layer, (int)CONFIG_KEYMAP_LAYERS_NUM);
+
+#ifdef DEBUG_H
+
+    PRINT("Config loader: boot_layer=%u,rgb_color_layer=%u, max_layers=%d\r\n",
+          (unsigned)requested_key_map_layer, requested_rgb_color_layer, CONFIG_KEYMAP_LAYERS_NUM);
+    for (uint8_t i = 0; i < TOTAL_KEYS; i++)
+    {
+        PRINT("modifiers=%d codes=%x %x %x  type=%u \r\n",
+              active_key_map[i].modifiers,
+              active_key_map[i].codes[0], active_key_map[i].codes[1], active_key_map[i].codes[2],
+              active_key_map[i].type);
+    }
+    for (uint8_t i = 0; i < CONFIG_RGB_COLOR_NUM; i++)
+    {
+        PRINT("RGB %d %d %d\r\n", active_rgb_color[i].r, active_rgb_color[i].g, active_rgb_color[i].b);
+    }
+#endif
 }
 
 // 以 page 为单位写入 flash，先读出整页数据到 RAM，修改对应范围后擦除并写回整页，最后验证写入结果。
-uint8_t config_write_flash_range(const uint32_t data_offset, const uint8_t* data, const uint32_t data_len,
+uint8_t config_write_flash_range(const uint8_t* data_addr_in_lma, const uint8_t* data, const uint32_t data_len,
                                  const char* log_tag)
 {
     uint8_t* const shadow_bytes = (uint8_t*)config_flash_shadow_words;
 
-    if (data == NULL || data_len == 0u)
+    if (data == NULL || data_len == 0u || data_addr_in_lma == NULL)
     {
         PRINT("%s: invalid data\r\n", log_tag);
         return 0;
     }
+
+    const uint8_t* const flash_base = &_config_lma[0];
+    const uint32_t data_offset = (uint32_t)(data_addr_in_lma - flash_base);
 
     if (data_offset + data_len > CONFIG_FLASH_BYTE)
     {
         PRINT("%s: out of range, offset=%u len=%u\r\n", log_tag, (unsigned)data_offset, (unsigned)data_len);
         return 0;
     }
-
     const uint32_t aligned_start = data_offset & ~(CONFIG_FLASH_PAGE_BYTE - 1u);
     const uint32_t aligned_end = (data_offset + data_len + (CONFIG_FLASH_PAGE_BYTE - 1u)) & ~(CONFIG_FLASH_PAGE_BYTE -
         1u);
@@ -137,46 +157,45 @@ uint8_t config_write_header(const ConfigHeader_t* config)
     return 1;
 }
 
-void config_load_key_map_layer(const uint8_t layer_index)
+uint8_t config_load_key_map_layer(const uint8_t layer_index)
 {
     if (layer_index >= CONFIG_KEYMAP_LAYERS_NUM)
     {
-        PRINT("Config loader: requested layer %u out of range, skip loading\r\n", (unsigned)layer_index);
-        return;
+        PRINT("KeyMap Config loader: requested layer %u out of range, skip loading\r\n", (unsigned)layer_index);
+        return 0;
     }
 
     const uint8_t* src = config_key_map_layer_address(layer_index);
 
-    memcpy(config_active, src, CONFIG_KEYMAP_LAYER_BYTE);
+    memcpy(active_key_map, src, CONFIG_KEYMAP_LAYER_BYTE);
     config_boot_config_ram.bits.boot_layer = layer_index;
+    return 1;
 }
 
 uint8_t config_write_key_map_layer(const uint8_t layer, const uint8_t* layer_data, const uint16_t layer_data_len)
 {
-    const int active_layer = config_boot_config_ram.bits.boot_layer;
-    const uint32_t layer_offset = CONFIG_HEADER_BYTE + ((uint32_t)layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE);
-
     if (layer >= CONFIG_KEYMAP_LAYERS_NUM)
     {
         PRINT("Set layer config: layer %u out of range\r\n", (unsigned)layer);
         return 0;
     }
 
-    if ((uint32_t)layer_data_len != (uint32_t)CONFIG_KEYMAP_LAYER_BYTE)
+    if (layer_data_len != CONFIG_KEYMAP_LAYER_BYTE)
     {
         PRINT("Set layer config: invalid payload length %u, expected %u\r\n",
               (unsigned)layer_data_len, (unsigned)CONFIG_KEYMAP_LAYER_BYTE);
         return 0;
     }
-
-    if (!config_write_flash_range(layer_offset, layer_data, CONFIG_KEYMAP_LAYER_BYTE, "Set layer config"))
+    const uint8_t* addr = config_key_map_layer_address(layer);
+    if (!config_write_flash_range(addr, layer_data, CONFIG_KEYMAP_LAYER_BYTE, "Set layer config"))
     {
         return 0;
     }
 
+    const int active_layer = config_boot_config_ram.bits.boot_layer;
     if (active_layer == (int)layer)
     {
-        memcpy(config_active, layer_data, CONFIG_KEYMAP_LAYER_BYTE);
+        memcpy(active_key_map, layer_data, CONFIG_KEYMAP_LAYER_BYTE);
     }
 
     return 1;
@@ -194,17 +213,59 @@ uint8_t config_write_all_key_map_layer(const uint8_t* layers_data, const uint16_
         return 0;
     }
 
-    if (!config_write_flash_range(CONFIG_HEADER_BYTE, layers_data, all_layers_size,
+    const uint8_t* addr = config_key_map_layer_address(0);
+    if (!config_write_flash_range(addr, layers_data, all_layers_size,
                                   "Set all layer config"))
     {
         return 0;
     }
 
-    if ((active_layer >= 0) && (active_layer < CONFIG_KEYMAP_LAYERS_NUM))
+    if (active_layer >= 0 && active_layer < CONFIG_KEYMAP_LAYERS_NUM)
     {
-        memcpy(config_active, layers_data + ((uint32_t)active_layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE),
+        memcpy(active_key_map, layers_data + ((uint32_t)active_layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE),
                CONFIG_KEYMAP_LAYER_BYTE);
     }
 
+    return 1;
+}
+
+uint8_t config_load_rgb_color_layer(const uint8_t layer_index)
+{
+    if (layer_index >= CONFIG_KEYMAP_LAYERS_NUM)
+    {
+        PRINT("Color Config loader: requested layer %u out of range, skip loading\r\n", (unsigned)layer_index);
+        return 0;
+    }
+
+    const uint8_t* src = config_rgb_color_layer_address(layer_index);
+
+    memcpy(active_rgb_color, src, CONFIG_RGB_COLOR_LAYER_BYTE);
+    config_boot_config_ram.bits.rgb_color_layer = layer_index;
+    return 1;
+}
+
+uint8_t config_write_rgb_color_layer(const uint8_t layer, const uint8_t* color_data, const uint16_t color_data_len)
+{
+    const int active_rgb_color_layer = config_boot_config_ram.bits.rgb_color_layer;
+    if (active_rgb_color_layer == CONFIG_RGB_COLOR_NUM)
+    {
+        PRINT("Set RGB color layer: layer %u out of range\r\n", (unsigned)layer);
+        return 0;
+    }
+    if (color_data_len != CONFIG_KEYMAP_LAYER_BYTE)
+    {
+        PRINT("Set color config: invalid payload length %u, expected %u\r\n",
+              (unsigned)color_data_len, (unsigned)CONFIG_KEYMAP_LAYER_BYTE);
+        return 0;
+    }
+    const uint8_t* addr = config_rgb_color_layer_address(layer);
+    if (!config_write_flash_range(addr, color_data, CONFIG_RGB_COLOR_LAYER_BYTE, "Set RGB color layer"))
+    {
+        return 0;
+    }
+    if (active_rgb_color_layer == layer)
+    {
+        memcpy(active_rgb_color, color_data, CONFIG_RGB_COLOR_LAYER_BYTE);
+    }
     return 1;
 }

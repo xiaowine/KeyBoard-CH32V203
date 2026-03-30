@@ -1,6 +1,7 @@
 #ifndef KEYBOARD_KEYMAP_H
 #define KEYBOARD_KEYMAP_H
 
+#include "common.h"
 #include "key_scan.h"
 
 #define MAX_CODE 3
@@ -15,12 +16,21 @@
 
 typedef struct PACKED
 {
+    /* modifiers: 8-bit bitmask,
+       Bit mapping follows standard HID modifier bitmap:
+         bit0: Left Ctrl  (0x01)
+         bit1: Left Shift (0x02)
+         bit2: Left Alt   (0x04)
+         bit3: Left GUI   (0x08)
+         bit4: Right Ctrl (0x10)
+         bit5: Right Shift(0x20)
+         bit6: Right Alt  (0x40)
+         bit7: Right GUI  (0x80)
+    */
     uint8_t modifiers;
     uint16_t codes[MAX_CODE];
     uint8_t type;
 } Key_Map_t;
-
-extern Key_Map_t config_active[TOTAL_KEYS];
 
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 

@@ -1,6 +1,8 @@
-#include "utils.h"
+#include "common.h"
+#include "key_map.h"
 
 #include "config.h"
+#include "rgb.h"
 
 extern uint8_t _config_lma[]; // NOLINT(*-reserved-identifier)
 
@@ -47,7 +49,7 @@ uint32_t get_bit_index(uint32_t v)
 }
 
 // 将 value 按照 scale（0-255）进行缩放，结果也在 0-255 范围内。
-inline uint8_t scale8_by_255(const uint8_t value, const uint8_t scale)
+uint8_t scale8_by_255(const uint8_t value, const uint8_t scale)
 {
     const uint16_t t = (uint16_t)value * (uint16_t)scale;
     return (uint8_t)((t + (t >> 8) + 1U) >> 8);
@@ -64,9 +66,16 @@ uint8_t km_get_code_count(const Key_Map_t* m)
     return MAX_CODE;
 }
 
-const uint8_t* config_key_map_layer_address(const uint8_t layer)
+const uint8_t* config_key_map_layer_address(const uint8_t index)
+{
+    const uint8_t* flash_base = &_config_lma[0];
+    const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t) + CONFIG_RGB_COLOR_TOTAL_LAYERS_BYTE;
+    return layers_src + index * CONFIG_KEYMAP_LAYER_BYTE;
+}
+
+const uint8_t* config_rgb_color_layer_address(const uint8_t index)
 {
     const uint8_t* flash_base = &_config_lma[0];
     const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t);
-    return layers_src + layer * CONFIG_KEYMAP_LAYER_BYTE;
+    return layers_src + index * CONFIG_RGB_COLOR_LAYER_BYTE;
 }

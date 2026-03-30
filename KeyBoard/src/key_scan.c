@@ -1,7 +1,7 @@
 #include "key_scan.h"
 #include <string.h>
 #include "debug.h"
-#include "utils.h"
+#include "common.h"
 
 /* 模块内部缓冲区与标志 */
 static uint8_t spi_dma_rx_buf[HC165_COUNT];

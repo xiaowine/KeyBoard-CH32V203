@@ -15,7 +15,7 @@
 #include "hw_config.h"
 #include "usb_pwr.h"
 #include "string.h"
-#include "utils.h"
+#include "common.h"
 
 /*******************************************************************************
  * @fn           USB_LP_CAN1_RX0_IRQHandler
