@@ -1,12 +1,12 @@
 #include "config_manager.h"
 #include <string.h>
-#include "key_map.h"
+#include "keymap.h"
 #include "config.h"
 #include "debug.h"
 #include "utils.h"
 
 extern uint8_t _config_lma[]; // NOLINT(*-reserved-identifier)
-extern Key_Map_t active_key_map[TOTAL_KEYS];
+extern KeyMap_t active_keymap[TOTAL_KEYS];
 extern RGB_Color_t active_rgb_color[CONFIG_RGB_COLOR_PATH_NUM];
 
 ConfigHeader_t config_boot_config_ram = {0};
@@ -17,36 +17,40 @@ void config_manager_init(void)
 {
     const size_t layer_size = CONFIG_KEYMAP_LAYER_BYTE;
 
-    memset(active_key_map, 0, layer_size);
+    memset(active_keymap, 0, layer_size);
     config_read_header(&config_boot_config_ram);
 
-    const uint8_t requested_key_map_layer = config_boot_config_ram.bits.boot_layer;
+    const uint8_t requested_keymap_layer = config_boot_config_ram.bits.boot_layer;
     const uint8_t requested_rgb_color_layer = config_boot_config_ram.bits.rgb_color_layer;
-
+    const uint8_t open_rgb_led = config_boot_config_ram.bits.open_rgb_led;
     config_boot_config_ram.bits.boot_layer = -1;
     config_boot_config_ram.bits.rgb_color_layer = -1;
 
-    if (config_load_key_map_layer(requested_key_map_layer))
+    if (config_load_keymap_layer(requested_keymap_layer))
     {
-        config_boot_config_ram.bits.boot_layer = requested_key_map_layer;
+        config_boot_config_ram.bits.boot_layer = requested_keymap_layer;
     }
 
-    if (config_load_rgb_color_layer(requested_rgb_color_layer))
+    if (open_rgb_led)
     {
-        config_boot_config_ram.bits.rgb_color_layer = requested_rgb_color_layer;
+        if (config_load_rgb_color_layer(requested_rgb_color_layer))
+        {
+            config_boot_config_ram.bits.rgb_color_layer = requested_rgb_color_layer;
+        }
     }
 
 
 #ifdef DEBUG_H
 
-    PRINT("Config loader: boot_layer=%u,rgb_color_layer=%u, max_layers=%d\r\n",
-          (unsigned)requested_key_map_layer, requested_rgb_color_layer, CONFIG_KEYMAP_LAYERS_NUM);
+    PRINT("boot_layer=%u max_layers=%d,rgb_color_layer=%u,open_rgb_led=%u,normal_mode=%d\r\n",
+          (unsigned)requested_keymap_layer, CONFIG_KEYMAP_LAYERS_NUM, requested_rgb_color_layer, open_rgb_led,
+          config_boot_config_ram.bits.normal_mode);
     for (uint8_t i = 0; i < TOTAL_KEYS; i++)
     {
         PRINT("modifiers=%d codes=%x %x %x  type=%u \r\n",
-              active_key_map[i].modifiers,
-              active_key_map[i].codes[0], active_key_map[i].codes[1], active_key_map[i].codes[2],
-              active_key_map[i].type);
+              active_keymap[i].modifiers,
+              active_keymap[i].codes[0], active_keymap[i].codes[1], active_keymap[i].codes[2],
+              active_keymap[i].type);
     }
     for (uint8_t i = 0; i < CONFIG_RGB_COLOR_NUM; i++)
     {
@@ -56,19 +60,19 @@ void config_manager_init(void)
 }
 
 // 以 page 为单位写入 flash，先读出整页数据到 RAM，修改对应范围后擦除并写回整页，最后验证写入结果。
-uint8_t config_write_flash_range(const uint8_t* data_addr_in_lma, const uint8_t* data, const uint32_t data_len,
+uint8_t config_write_flash_range(const uint8_t* lma_addr, const uint8_t* data, const uint32_t data_len,
                                  const char* log_tag)
 {
     uint8_t* const shadow_bytes = (uint8_t*)config_flash_shadow_words;
 
-    if (data == NULL || data_len == 0u || data_addr_in_lma == NULL)
+    if (data == NULL || data_len == 0u || lma_addr == NULL)
     {
         PRINT("%s: invalid data\r\n", log_tag);
         return 0;
     }
 
     const uint8_t* const flash_base = &_config_lma[0];
-    const uint32_t data_offset = (uint32_t)(data_addr_in_lma - flash_base);
+    const uint32_t data_offset = (uint32_t)(lma_addr - flash_base);
 
     if (data_offset + data_len > CONFIG_FLASH_BYTE)
     {
@@ -157,7 +161,7 @@ uint8_t config_write_header(const ConfigHeader_t* config)
     return 1;
 }
 
-uint8_t config_load_key_map_layer(const uint8_t layer_index)
+uint8_t config_load_keymap_layer(const uint8_t layer_index)
 {
     if (layer_index >= CONFIG_KEYMAP_LAYERS_NUM)
     {
@@ -165,14 +169,14 @@ uint8_t config_load_key_map_layer(const uint8_t layer_index)
         return 0;
     }
 
-    const uint8_t* src = config_key_map_layer_address(layer_index);
+    const uint8_t* src = config_keymap_layer_address(layer_index);
 
-    memcpy(active_key_map, src, CONFIG_KEYMAP_LAYER_BYTE);
+    memcpy(active_keymap, src, CONFIG_KEYMAP_LAYER_BYTE);
     config_boot_config_ram.bits.boot_layer = layer_index;
     return 1;
 }
 
-uint8_t config_write_key_map_layer(const uint8_t layer, const uint8_t* layer_data, const uint16_t layer_data_len)
+uint8_t config_write_keymap_layer(const uint8_t layer, const uint8_t* layer_data, const uint16_t layer_data_len)
 {
     if (layer >= CONFIG_KEYMAP_LAYERS_NUM)
     {
@@ -186,7 +190,7 @@ uint8_t config_write_key_map_layer(const uint8_t layer, const uint8_t* layer_dat
               (unsigned)layer_data_len, (unsigned)CONFIG_KEYMAP_LAYER_BYTE);
         return 0;
     }
-    const uint8_t* addr = config_key_map_layer_address(layer);
+    const uint8_t* addr = config_keymap_layer_address(layer);
     if (!config_write_flash_range(addr, layer_data, CONFIG_KEYMAP_LAYER_BYTE, "Set layer config"))
     {
         return 0;
@@ -195,13 +199,13 @@ uint8_t config_write_key_map_layer(const uint8_t layer, const uint8_t* layer_dat
     const int active_layer = config_boot_config_ram.bits.boot_layer;
     if (active_layer == (int)layer)
     {
-        memcpy(active_key_map, layer_data, CONFIG_KEYMAP_LAYER_BYTE);
+        memcpy(active_keymap, layer_data, CONFIG_KEYMAP_LAYER_BYTE);
     }
 
     return 1;
 }
 
-uint8_t config_write_all_key_map_layer(const uint8_t* layers_data, const uint16_t layers_data_len)
+uint8_t config_write_all_keymap_layer(const uint8_t* layers_data, const uint16_t layers_data_len)
 {
     const uint32_t all_layers_size = (uint32_t)CONFIG_KEYMAP_LAYER_BYTE * (CONFIG_KEYMAP_LAYERS_NUM);
     const int active_layer = config_boot_config_ram.bits.boot_layer;
@@ -213,7 +217,7 @@ uint8_t config_write_all_key_map_layer(const uint8_t* layers_data, const uint16_
         return 0;
     }
 
-    const uint8_t* addr = config_key_map_layer_address(0);
+    const uint8_t* addr = config_keymap_layer_address(0);
     if (!config_write_flash_range(addr, layers_data, all_layers_size,
                                   "Set all layer config"))
     {
@@ -222,7 +226,7 @@ uint8_t config_write_all_key_map_layer(const uint8_t* layers_data, const uint16_
 
     if (active_layer >= 0 && active_layer < CONFIG_KEYMAP_LAYERS_NUM)
     {
-        memcpy(active_key_map, layers_data + ((uint32_t)active_layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE),
+        memcpy(active_keymap, layers_data + ((uint32_t)active_layer * (uint32_t)CONFIG_KEYMAP_LAYER_BYTE),
                CONFIG_KEYMAP_LAYER_BYTE);
     }
 
@@ -231,7 +235,7 @@ uint8_t config_write_all_key_map_layer(const uint8_t* layers_data, const uint16_
 
 uint8_t config_load_rgb_color_layer(const uint8_t layer_index)
 {
-    if (layer_index >= CONFIG_KEYMAP_LAYERS_NUM)
+    if (layer_index >= CONFIG_RGB_COLOR_NUM)
     {
         PRINT("Color Config loader: requested layer %u out of range, skip loading\r\n", (unsigned)layer_index);
         return 0;
@@ -247,15 +251,15 @@ uint8_t config_load_rgb_color_layer(const uint8_t layer_index)
 uint8_t config_write_rgb_color_layer(const uint8_t layer, const uint8_t* color_data, const uint16_t color_data_len)
 {
     const int active_rgb_color_layer = config_boot_config_ram.bits.rgb_color_layer;
-    if (active_rgb_color_layer == CONFIG_RGB_COLOR_NUM)
+    if (active_rgb_color_layer >= CONFIG_RGB_COLOR_NUM)
     {
         PRINT("Set RGB color layer: layer %u out of range\r\n", (unsigned)layer);
         return 0;
     }
-    if (color_data_len != CONFIG_KEYMAP_LAYER_BYTE)
+    if (color_data_len != CONFIG_RGB_COLOR_LAYER_BYTE)
     {
         PRINT("Set color config: invalid payload length %u, expected %u\r\n",
-              (unsigned)color_data_len, (unsigned)CONFIG_KEYMAP_LAYER_BYTE);
+              (unsigned)color_data_len, (unsigned)CONFIG_RGB_COLOR_LAYER_BYTE);
         return 0;
     }
     const uint8_t* addr = config_rgb_color_layer_address(layer);

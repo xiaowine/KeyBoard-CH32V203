@@ -30,7 +30,7 @@ typedef struct PACKED
     uint8_t modifiers;
     uint16_t codes[MAX_CODE];
     uint8_t type;
-} Key_Map_t;
+} KeyMap_t;
 
 void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT]);
 

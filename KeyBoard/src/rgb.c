@@ -163,7 +163,7 @@ void start_Gradient_t(Gradient_t* grad, const RGB_Color_t* path, const uint8_t p
     grad->path = path;
     grad->path_len = path_len;
     grad->steps_per_segment = steps_per_segment;
-    grad->loop = (loop != 0U) ? 1U : 0U;
+    grad->loop = loop != 0U ? 1U : 0U;
     grad->is_running = 1U;
 
     Gradient_t_prepare_segment(grad, 0U);
@@ -192,7 +192,7 @@ uint8_t update_Gradient_t(Gradient_t* grad, RGB_Color_t* out_Color_t)
             return 1U;
         }
 
-        if ((grad->seg_idx + 1U) < (uint8_t)(grad->path_len - 1U))
+        if (grad->seg_idx + 1U < (uint8_t)(grad->path_len - 1U))
         {
             Gradient_t_prepare_segment(grad, (uint8_t)(grad->seg_idx + 1U));
             continue;

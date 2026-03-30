@@ -6,7 +6,7 @@
 #include "key_scan.h"
 #include "usb_lib.h"
 #include "usb_desc.h"
-#include "key_map.h"
+#include "keymap.h"
 #include "config_manager.h"
 #include "rgb.h"
 
@@ -25,14 +25,9 @@ volatile uint8_t tick5ms_counter = 0;
 volatile uint8_t ms5_tick = 0;
 
 Gradient_t rgb_Gradient_t = {0};
-const RGB_Color_t Gradient_t_path[] = {
-    {48, 25, 52},
-    {255, 140, 0},
-    {32, 160, 255},
-    {48, 25, 52}
-};
+extern KeyMap_t active_keymap[TOTAL_KEYS];
+extern RGB_Color_t active_rgb_color[CONFIG_RGB_COLOR_PATH_NUM];
 
-extern Key_Map_t active_key_map[TOTAL_KEYS];
 void app_init(void)
 {
     RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOA, ENABLE);
@@ -49,8 +44,12 @@ void app_init(void)
 
     // RGB 初始化
     rgb_init();
-    start_Gradient_t(&rgb_Gradient_t, Gradient_t_path, (uint8_t)(sizeof(Gradient_t_path) / sizeof(Gradient_t_path[0])),
-                     600, 1U);
+    if (config_boot_config_ram.bits.open_rgb_led)
+    {
+        start_Gradient_t(&rgb_Gradient_t, active_rgb_color, sizeof(active_rgb_color) / sizeof(active_rgb_color[0]), 600,
+                         1U);
+    }
+
     // TIM 初始化
     {
         RCC_APB2PeriphClockCmd(KEYSCAN_TIM_RCC, ENABLE);
@@ -142,10 +141,13 @@ void app_run(void)
     if (ms5_tick)
     {
         comm_controller_process();
-        RGB_Color_t next_Color_t;
-        if (update_Gradient_t(&rgb_Gradient_t, &next_Color_t) != 0U)
+        if (config_boot_config_ram.bits.open_rgb_led)
         {
-            rgb_set_color_t(next_Color_t.r, next_Color_t.g, next_Color_t.b);
+            static RGB_Color_t next_Color_t;
+            if (update_Gradient_t(&rgb_Gradient_t, &next_Color_t) != 0U)
+            {
+                rgb_set_color_t(next_Color_t.r, next_Color_t.g, next_Color_t.b);
+            }
         }
         ms5_tick = 0;
     }
@@ -195,9 +197,9 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
         }
     case DATA_TYPE_GET_LAYER_KEYMAP:
         {
-            const uint16_t layer_size = sizeof(Key_Map_t) * TOTAL_KEYS;
+            const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
             /* 发送当前运行时已加载的一层（位于 config_active） */
-            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)active_key_map, layer_size);
+            comm_queue_reply(DATA_TYPE_GET_LAYER_KEYMAP, (uint8_t*)active_keymap, layer_size);
             break;
         }
     case DATA_TYPE_GET_ALL_LAYER_KEYMAP:
@@ -205,7 +207,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             /* 从 FLASH 镜像读取所有层的连续数据（紧凑镜像布局） */
             // NOLINTNEXTLINE(*-reserved-identifier)
             extern uint8_t _config_lma[]; /* LMA 起始符号，定义在 config_image.o 中 */
-            const uint16_t layer_size = sizeof(Key_Map_t) * TOTAL_KEYS;
+            const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
             const uint8_t* flash_base = &_config_lma[0];
             const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t);
             comm_queue_reply(DATA_TYPE_GET_ALL_LAYER_KEYMAP, layers_src, layer_size * (CONFIG_KEYMAP_LAYERS_NUM));
@@ -223,7 +225,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
             {
                 return;
             }
-            config_load_key_map_layer(layer);
+            config_load_keymap_layer(layer);
             break;
         }
     case DATA_TYPE_SET_BOOT_LAYER:
@@ -251,7 +253,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
     case DATA_TYPE_SET_LAYER_KEYMAP:
         {
             const int active_layer = config_boot_config_ram.bits.boot_layer;
-            const uint16_t layer_size = sizeof(Key_Map_t) * TOTAL_KEYS;
+            const uint16_t layer_size = sizeof(KeyMap_t) * TOTAL_KEYS;
             if ((active_layer < 0) || (active_layer >= CONFIG_KEYMAP_LAYERS_NUM))
             {
                 PRINT("Set layer config: no active layer\r\n");
@@ -265,7 +267,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
                 return;
             }
 
-            if (config_write_key_map_layer((uint8_t)active_layer, payload, payload_len))
+            if (config_write_keymap_layer((uint8_t)active_layer, payload, payload_len))
             {
                 PRINT("Set layer config: layer=%u\r\n", (unsigned)active_layer);
             }
@@ -273,7 +275,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
         }
     case DATA_TYPE_SET_ALL_LAYER_KEYMAP:
         {
-            const uint16_t all_layers_size = sizeof(Key_Map_t) * TOTAL_KEYS * CONFIG_KEYMAP_LAYERS_NUM;
+            const uint16_t all_layers_size = sizeof(KeyMap_t) * TOTAL_KEYS * CONFIG_KEYMAP_LAYERS_NUM;
 
             if (payload_len != all_layers_size)
             {
@@ -282,7 +284,7 @@ void app_comm_rx_callback(const uint8_t payload_type, const uint8_t* payload, co
                 return;
             }
 
-            if (config_write_all_key_map_layer(payload, payload_len))
+            if (config_write_all_keymap_layer(payload, payload_len))
             {
                 PRINT("Set all layer config: layers=%u\r\n", (unsigned)CONFIG_KEYMAP_LAYERS_NUM);
             }

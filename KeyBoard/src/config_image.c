@@ -1,4 +1,4 @@
-#include "key_map.h"
+#include "keymap.h"
 #include "config.h"
 #include "rgb.h"
 #include "common.h"
@@ -8,7 +8,7 @@ const struct PACKED
 {
     ConfigHeader_t header;
     RGB_Color_t rgb[CONFIG_RGB_COLOR_NUM][CONFIG_RGB_COLOR_PATH_NUM];
-    Key_Map_t keymap[CONFIG_KEYMAP_LAYERS_NUM][TOTAL_KEYS];
+    KeyMap_t keymap[CONFIG_KEYMAP_LAYERS_NUM][TOTAL_KEYS];
 } CONFIG_IMAGE = {
     .header =
     {
@@ -16,6 +16,7 @@ const struct PACKED
         {
             .boot_layer = 0,
             .rgb_color_layer = 1,
+            .open_rgb_led = 1,
             .normal_mode = 0,
             .reserved = 0,
         },

@@ -175,8 +175,8 @@ def load_keymap_reply_sizes() -> Tuple[int, int, int]:
             if layer_size_temp > 0:
                 keymap_layers = (flash_total - flash_header) // layer_size_temp
 
-    key_mapping_size = 1 + 2 * max_code + 1
-    layer_size = key_mapping_size * key_total_keys
+    keymapping_size = 1 + 2 * max_code + 1
+    layer_size = keymapping_size * key_total_keys
     all_size = layer_size * keymap_layers
     return layer_size, all_size, keymap_layers
 

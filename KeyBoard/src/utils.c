@@ -1,5 +1,5 @@
 #include "common.h"
-#include "key_map.h"
+#include "keymap.h"
 
 #include "config.h"
 #include "rgb.h"
@@ -55,8 +55,8 @@ uint8_t scale8_by_255(const uint8_t value, const uint8_t scale)
     return (uint8_t)((t + (t >> 8) + 1U) >> 8);
 }
 
-// 获取 Key_Map_t 结构中有效 codes 的数量
-uint8_t km_get_code_count(const Key_Map_t* m)
+// 获取 KeyMap_t 结构中有效 codes 的数量
+uint8_t km_get_code_count(const KeyMap_t* m)
 {
     for (uint8_t i = 0; i < MAX_CODE; ++i)
     {
@@ -66,7 +66,7 @@ uint8_t km_get_code_count(const Key_Map_t* m)
     return MAX_CODE;
 }
 
-const uint8_t* config_key_map_layer_address(const uint8_t index)
+const uint8_t* config_keymap_layer_address(const uint8_t index)
 {
     const uint8_t* flash_base = &_config_lma[0];
     const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t) + CONFIG_RGB_COLOR_TOTAL_LAYERS_BYTE;

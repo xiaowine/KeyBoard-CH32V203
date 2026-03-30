@@ -1,4 +1,4 @@
-#include "key_map.h"
+#include "keymap.h"
 #include "key_scan.h"
 #include "usb_endp.h"
 #include <string.h>
@@ -12,7 +12,7 @@ static uint16_t kb_heartbeat_counter = 0;
 
 /* 运行时单层缓冲区：loader 将把选中的 layer 拷贝到此处 */
 
-Key_Map_t active_key_map[TOTAL_KEYS] LINK_AND_AL(".data", 4);
+KeyMap_t active_keymap[TOTAL_KEYS] LINK_AND_AL(".data", 4);
 
 /**
  * 核心发送逻辑：扫描 -> 收集 -> 分组 -> 发送
@@ -62,14 +62,14 @@ void kb_send_snapshot(const uint8_t snapshot[HC165_COUNT])
     uint8_t mouse_buttons_mask = 0; /* bits 0..4 */
     int16_t mouse_wheel_sum = 0;
     // 使用临时变量进行位扫描，避免破坏原始 keys（用于最终更新 prev_keys）
-    const Key_Map_t* km = active_key_map;
+    const KeyMap_t* km = active_keymap;
     uint32_t scan = keys;
     while (scan)
     {
         const uint32_t idx = get_bit_index(scan);
         if (idx < TOTAL_KEYS)
         {
-            const Key_Map_t* m = &km[idx];
+            const KeyMap_t* m = &km[idx];
             const uint8_t count = km_get_code_count(m);
             if (count == 0 && m->modifiers == 0 && m->type == KEY_TYPE_KEYBOARD)
             {
