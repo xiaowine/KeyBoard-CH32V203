@@ -23,7 +23,7 @@ volatile uint8_t time1ms_tick = 0;
 volatile uint8_t time5ms_tick = 0;
 
 Gradient rgb_gradient = {0};
-static const Color gradient_path[] = {
+const Color gradient_path[] = {
     {48, 25, 52},
     {255, 140, 0},
     {32, 160, 255},

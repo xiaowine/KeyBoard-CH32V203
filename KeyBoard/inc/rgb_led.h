@@ -2,6 +2,7 @@
 #define KEYBOARD_RGB_LED_H
 
 #include <stdint.h>
+#include "utils.h"
 
 #define RGB_LED_PIN GPIO_Pin_7
 #define RGB_LED_PORT GPIOA
@@ -16,7 +17,7 @@
 
 #define WS2812_BIT_FREQ_HZ 800000U
 
-typedef struct
+typedef struct PACKED
 {
     uint8_t r;
     uint8_t g;
@@ -25,7 +26,7 @@ typedef struct
 
 typedef struct
 {
-    const Color* path;
+    const Color *path;
     uint8_t path_len;
     uint8_t seg_idx;
     uint8_t loop;
@@ -45,7 +46,7 @@ void rgb_led_set_color(uint8_t r, uint8_t g, uint8_t b);
 void rgb_led_set_brightness(uint8_t brightness);
 uint8_t rgb_led_is_busy(void);
 
-void start_gradient(Gradient* grad, const Color* path, uint8_t path_len, uint16_t steps_per_segment, uint8_t loop);
-uint8_t update_gradient(Gradient* grad, Color* out_color);
+void start_gradient(Gradient *grad, const Color *path, uint8_t path_len, uint16_t steps_per_segment, uint8_t loop);
+uint8_t update_gradient(Gradient *grad, Color *out_color);
 
 #endif // KEYBOARD_RGB_LED_H
