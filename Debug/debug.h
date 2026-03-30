@@ -19,17 +19,13 @@
 #ifdef __cplusplus
 extern "C" {
 
+
 #endif
 
 /* UART Printf Definition */
 #define DEBUG_UART1 1
 #define DEBUG_UART2 2
 #define DEBUG_UART3 3
-
-/* DEBUG UATR Definition */
-#ifndef DEBUG
-#define DEBUG DEBUG_UART1
-#endif
 
 /* SDI Printf Definition */
 #define SDI_PR_CLOSE 0

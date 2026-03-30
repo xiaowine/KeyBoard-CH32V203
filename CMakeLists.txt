@@ -23,27 +23,33 @@ SET(CMAKE_C_COMPILER_WORKS TRUE)
 SET(CMAKE_CXX_COMPILER_WORKS TRUE)
 SET(CMAKE_ASM_COMPILER_WORKS TRUE)
 
-# Use MRS toolchian to compile
+# --- 工具链路径处理 ---
 if (DEFINED ENV{TOOLCHAIN_FOLDER})
-    message(STATUS "Using TOOLCHAIN_FOLDER from environment: $ENV{TOOLCHAIN_FOLDER}")
     set(TOOLCHAIN_FOLDER "$ENV{TOOLCHAIN_FOLDER}")
+    message(STATUS "Using TOOLCHAIN_FOLDER from environment: ${TOOLCHAIN_FOLDER}")
 else ()
-    # Fallback default used when the environment variable is not set
+    # 这里保留你的本地路径，方便你在自己电脑上编译
     set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC15")
-    message(STATUS "TOOLCHAIN_FOLDER not set in environment; using default: ${TOOLCHAIN_FOLDER}")
 endif ()
+
 set(TOOLCHAIN_PREFIX "riscv32-wch-elf-")
 
+# --- 跨平台后缀处理 ---
+if (CMAKE_HOST_WIN32)
+    set(EXE_EXT ".exe")
+else ()
+    set(EXE_EXT "")
+endif ()
 
-#set(TOOLCHAIN_FOLDER "f:/MounRiver/MounRiver_Studio2/resources/app/resources/win32/components/WCH/Toolchain/RISC-V Embedded GCC")
-#set(TOOLCHAIN_PREFIX "riscv-none-embed-")
-set(CMAKE_C_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")
-set(CMAKE_CXX_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}g++.exe")
-set(CMAKE_ASM_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc.exe")
-set(CMAKE_OBJCOPY "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}objcopy.exe")
-set(CMAKE_OBJDUMP "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}objdump.exe")
-set(CMAKE_SIZE "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}size.exe")
-set(CMAKE_AR "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}ar.exe")
+# 使用变量动态组合编译器路径
+set(CMAKE_C_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc${EXE_EXT}")
+set(CMAKE_CXX_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}g++${EXE_EXT}")
+set(CMAKE_ASM_COMPILER "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}gcc${EXE_EXT}")
+set(CMAKE_OBJCOPY "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}objcopy${EXE_EXT}")
+set(CMAKE_OBJDUMP "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}objdump${EXE_EXT}")
+set(CMAKE_SIZE "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}size${EXE_EXT}")
+set(CMAKE_AR "${TOOLCHAIN_FOLDER}/bin/${TOOLCHAIN_PREFIX}ar${EXE_EXT}")
+
 
 set(PROJECT_NAME "KeyBoard")
 set(TARGET_ARTIFACT "${PROJECT_NAME}.elf")
@@ -81,6 +87,11 @@ set(CMAKE_CXX_FLAGS "${COMMON_RISCV_FLAGS} -std=gnu++11 -fabi-version=0 ${RTL_DU
 set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -x assembler-with-cpp ${RTL_DUMP_FLAGS}")
 
 add_executable("${TARGET_ARTIFACT}" ${SRC_FILES})
+
+if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
+    target_compile_definitions("${TARGET_ARTIFACT}" PRIVATE DEBUG=1)
+    message(STATUS "Non-Release build: adding compile definition DEBUG=1")
+endif ()
 
 # Use target include directories instead of embedding -I flags into CFLAGS
 target_include_directories("${TARGET_ARTIFACT}" PRIVATE

@@ -40,7 +40,7 @@ void config_manager_init(void)
     }
 
 
-#ifdef DEBUG_H
+#ifdef DEBUG
 
     PRINT("boot_layer=%u max_layers=%d,rgb_color_layer=%u,open_rgb_led=%u,normal_mode=%d\r\n",
           (unsigned)requested_keymap_layer, CONFIG_KEYMAP_LAYERS_NUM, requested_rgb_color_layer, open_rgb_led,

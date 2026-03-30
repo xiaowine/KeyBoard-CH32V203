@@ -1,0 +1,52 @@
+name: Build MCU Project
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Install Build Essentials
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake make gcc-multilib libncurses5
+
+      - name: Cache Toolchain
+        id: cache-mrs
+        uses: actions/cache@v5
+        with:
+          path: ./mrs_toolchain
+          key: mrs-v240-linux-x64
+
+      - name: Download Toolchain (Mirror)
+        if: steps.cache-mrs.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./mrs_toolchain
+          curl -L "https://github.com/xiaowine/xiaowine/releases/download/MounRiverStudio_Linux_X64_V240/MRS_Toolchain_Linux_X64_V240.tar.xz" -o toolchain.tar.xz
+          # 解压并去掉一层目录，让 bin 直接在 ./mrs_toolchain 内部
+          tar -xJf toolchain.tar.xz -C ./mrs_toolchain --strip-components=1
+          rm toolchain.tar.xz
+
+      - name: Configure and Build
+        run: |
+          # 关键：将解压后的绝对路径传给环境变量 TOOLCHAIN_FOLDER
+          export TOOLCHAIN_FOLDER=$(pwd)/mrs_toolchain
+          cmake -S . -B build -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build -j$(nproc)
+
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ github.event.repository.name }}-build
+          path: |
+            build/*.elf
+            build/*.hex
+            build/*.bin
+            build/*.map
+            build/*.lst
