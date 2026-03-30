@@ -88,9 +88,9 @@ set(CMAKE_ASM_FLAGS "${COMMON_RISCV_FLAGS} -x assembler-with-cpp ${RTL_DUMP_FLAG
 
 add_executable("${TARGET_ARTIFACT}" ${SRC_FILES})
 
-if (NOT CMAKE_BUILD_TYPE STREQUAL "Release")
-    target_compile_definitions("${TARGET_ARTIFACT}" PRIVATE DEBUG=1)
-    message(STATUS "Non-Release build: adding compile definition DEBUG=1")
+if (NOT CMAKE_BUILD_TYPE MATCHES "Release")
+    target_compile_definitions("${TARGET_ARTIFACT}" PRIVATE DEBUG=DEBUG_UART1)
+    message(STATUS "Non-Release build: adding compile definition DEBUG")
 endif ()
 
 # Use target include directories instead of embedding -I flags into CFLAGS
