@@ -55,11 +55,11 @@ INTF void TIM4_IRQHandler(void)
         TIM_ClearITPendingBit(ENCODE_TIM, TIM_IT_Update);
         if (ENCODE_TIM->CTLR1 & TIM_DIR)
         {
-            USBD_SendMouseReport(0, 1);
+            USBD_SendMouseReport(0, -1);
         }
         else
         {
-            USBD_SendMouseReport(0, -1);
+            USBD_SendMouseReport(0, 1);
         }
     }
 }

@@ -19,8 +19,10 @@ uint8_t is_debug_mode = 0;
 uint8_t next_sample_slot = 0;
 volatile uint8_t active_sample_slot = 0;
 volatile uint8_t scan_timeout_ticks = 0;
-volatile uint8_t time1ms_tick = 0;
-volatile uint8_t time5ms_tick = 0;
+volatile uint8_t tick1ms_counter = 0;
+volatile uint8_t ms1_tick = 0;
+volatile uint8_t tick5ms_counter = 0;
+volatile uint8_t ms5_tick = 0;
 
 Gradient rgb_gradient = {0};
 const Color gradient_path[] = {
@@ -132,12 +134,12 @@ void app_run(void)
         break;
     }
 
-    if (time1ms_tick)
+    if (ms1_tick)
     {
         kb_send_snapshot(last_snapshot);
-        time1ms_tick = 0;
+        ms1_tick = 0;
     }
-    if (time5ms_tick)
+    if (ms5_tick)
     {
         comm_controller_process();
         Color next_color;
@@ -145,7 +147,7 @@ void app_run(void)
         {
             rgb_led_set_color(next_color.r, next_color.g, next_color.b);
         }
-        time5ms_tick = 0;
+        ms5_tick = 0;
     }
 }
 
@@ -153,13 +155,16 @@ RAM INTF void TIM1_UP_IRQHandler(void)
 {
     if (TIM_GetITStatus(KEYSCAN_TIM, TIM_IT_Update) == SET)
     {
-        time1ms_tick = 1;
-        // 由 TIM1 额外产生 5ms 标志（每 5 个 update 触发一次）
-        static uint8_t tick5ms_counter = 0;
+        tick1ms_counter++;
         tick5ms_counter++;
-        if (tick5ms_counter >= 5)
+        if (tick1ms_counter >= MS_TICK)
         {
-            time5ms_tick = 1;
+            ms1_tick = 1;
+            tick1ms_counter = 0;
+        }
+        if (tick5ms_counter >= MS_TICK * 5)
+        {
+            ms5_tick = 1;
             tick5ms_counter = 0;
         }
         /* 如果当前空闲，启动新的扫描 */
