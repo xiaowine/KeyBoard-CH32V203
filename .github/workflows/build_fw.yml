@@ -37,6 +37,18 @@ jobs:
         run: |
           # 关键：将解压后的绝对路径传给环境变量 TOOLCHAIN_FOLDER
           export TOOLCHAIN_FOLDER=$(pwd)/mrs_toolchain
+          echo "TOOLCHAIN_FOLDER=$TOOLCHAIN_FOLDER"
+          
+          # 列出 bin 内容并检查文件是否存在与权限
+          ls -la "${TOOLCHAIN_FOLDER}/bin" || true
+          
+          # 明确检查几个可执行文件
+          for f in gcc g++ objcopy objdump; do
+          p="${TOOLCHAIN_FOLDER}/bin/riscv32-wch-elf-$f"
+          echo "checking $p"
+          [ -f "$p" ] && echo "FOUND" || echo "MISSING"
+          [ -x "$p" ] && echo "EXECUTABLE" || echo "NOT EXECUTABLE"
+          done
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j$(nproc)
 
