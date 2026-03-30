@@ -21,30 +21,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
-      - name: Fetch toolchain URL
-        run: |
-          echo "Fetching toolchain URL from API..."
-          resourceId="${{ github.event_name == 'workflow_dispatch' && github.event.inputs.resourceId || '1993872528621211649' }}"
-          echo "Using resourceId: $resourceId"
-          response=$(curl -s "https://api.mounriver.com/mountriver/api/version/fetchRecentOpenOcdUrl?resourceId=$resourceId")
-          echo "$response" > response.json
-          code=$(echo "$response" | jq -r '.code')
-          if [ "$code" != "0" ]; then
-            echo "API returned non-zero code: $code"; cat response.json; exit 1
-          fi
-          url=$(echo "$response" | jq -r '.result')
-          if [ -z "$url" ] || [ "$url" = "null" ]; then
-            echo "No result URL in response"; cat response.json; exit 1
-          fi
-          echo "TOOLCHAIN_URL=$url" >> $GITHUB_ENV
-
       - name: Download and extract toolchain
         run: |
           set -euo pipefail
           mkdir -p toolchain-download
           cd toolchain-download
-          echo "Downloading $TOOLCHAIN_URL"
-          curl -L --fail -o toolchain.tar.xz "$TOOLCHAIN_URL"
+          curl -L --fail -o toolchain.tar.xz "https://github.com/xiaowine/xiaowine/releases/download/MounRiverStudio_Linux_X64_V240/MRS_Toolchain_Linux_X64_V240.tar.xz"
           echo "Extracting toolchain.tar.xz..."
           tar -xJf toolchain.tar.xz
           # If a nested .tar exists, extract it too
