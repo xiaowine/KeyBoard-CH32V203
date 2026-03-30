@@ -12,7 +12,7 @@
 #################################################################################################################################################
 
 # Set CMake minimum require
-cmake_minimum_required(VERSION 4.1.2)
+cmake_minimum_required(VERSION 3.16)
 
 # Set CMake sysytem name
 set(CMAKE_SYSTEM_NAME Generic)
