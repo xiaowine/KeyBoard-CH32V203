@@ -9,4 +9,6 @@ uint8_t scale8_by_255(uint8_t value, uint8_t scale);
 uint8_t km_get_code_count(const KeyMap_t* m);
 const uint8_t* config_keymap_layer_address(uint8_t index);
 const uint8_t* config_rgb_color_layer_address(uint8_t index);
+uint16_t parse_u16_le(const uint8_t* buf);
+void write_u16_le(uint8_t* buf, uint16_t value);
 #endif

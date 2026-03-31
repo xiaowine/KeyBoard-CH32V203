@@ -137,17 +137,17 @@ typedef enum
 typedef struct
 {
     /** 当前会话业务类型。 */
-    uint8_t payload_type;
+    volatile uint8_t payload_type;
     /** 最近一次成功接收的 seq_num。 */
-    uint8_t last_seq_num;
+    volatile uint8_t last_seq_num;
     /** 接收方向重试计数。 */
-    uint8_t retry_count;
+    volatile uint8_t retry_count;
     /** 标记是否需要回 ACK。 */
-    uint8_t need_ack;
+    volatile uint8_t need_ack;
     /** 当前会话声明的总长度。 */
-    uint16_t expected_payload_len;
+    volatile uint16_t expected_payload_len;
     /** 已累计接收的字节数。 */
-    uint16_t received_payload_len;
+    volatile uint16_t received_payload_len;
     /** 接收缓存指针，长度为 expected_payload_len。 */
     uint8_t* payload_buf;
 } Receive_Handle_t;
@@ -158,34 +158,34 @@ typedef struct
     /** 最近一次发送/待重发的帧缓存。 */
     Frame_Data_t frame_data;
     /** 当前发送状态。 */
-    SEND_STATUS status;
+    volatile SEND_STATUS status;
     /** 记录上一次状态，便于调试。 */
-    SEND_STATUS last_status;
+    volatile SEND_STATUS last_status;
     /** 发送方向重试计数。 */
-    uint8_t retry_count;
+    volatile uint8_t retry_count;
     /** 是否收到 ACK。 */
-    uint8_t receive_ack;
+    volatile uint8_t receive_ack;
     /** 是否收到 NACK。 */
-    uint8_t receive_nack;
+    volatile uint8_t receive_nack;
     /** 当前帧来源。 */
-    TX_SOURCE source;
+    volatile TX_SOURCE source;
 } Send_Handle_t;
 
 /** @brief 业务回复会话上下文。 */
 typedef struct
 {
     /** 1 表示会话有效。 */
-    uint8_t active;
+    volatile uint8_t active;
     /** 回复业务类型。 */
-    uint8_t payload_type;
+    volatile uint8_t payload_type;
     /** 下一帧 DATA 序号。 */
-    uint8_t next_seq_num;
+    volatile uint8_t next_seq_num;
     /** 当前发送阶段。 */
-    REPLY_PHASE phase;
+    volatile REPLY_PHASE phase;
     /** 本次回复总长度。 */
-    uint16_t payload_len;
+    volatile uint16_t payload_len;
     /** 已被 ACK 的字节数。 */
-    uint16_t acked_payload_len;
+    volatile uint16_t acked_payload_len;
     /** 回复缓存指针，长度为 payload_len。 */
     uint8_t* payload_buf;
 } Reply_Session_t;

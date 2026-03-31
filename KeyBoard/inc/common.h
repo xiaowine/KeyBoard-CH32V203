@@ -6,6 +6,7 @@
 #define PACKED __attribute__((packed))
 #define RAM __attribute__((section(".ramfunc")))
 #define AL4 __attribute__((aligned(4)))
+#define USED __attribute__((used))
 #define LINK_AND_AL(x, y) __attribute__((section(x), used, aligned(y)))
 #define CEIL_DIV(x, y) (((x) + (y) - 1) / (y))
 #define CLAMP_INPLACE(var, lo, hi) \

@@ -1,10 +1,9 @@
 #include "comm_controller.h"
-
 #include <stdlib.h>
 #include <string.h>
-
 #include "usb_desc.h"
 #include "usb_endp.h"
+#include "utils.h"
 
 /**
  * @file comm_controller.c
@@ -34,9 +33,9 @@ static void handle_send_ack(void);
 /** @brief 处理发送侧重试溢出。 */
 static void handle_send_retry_overflow(void);
 /** @brief 依据优先级准备下一帧待发送数据。 */
-static uint8_t prepare_next_frame(Frame_Data_t *out_frame, TX_SOURCE *out_source);
+static uint8_t prepare_next_frame(Frame_Data_t* out_frame, TX_SOURCE* out_source);
 /** @brief 将完整业务载荷分发给上层回调。 */
-static void dispatch_received_payload(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len);
+static void dispatch_received_payload(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len);
 
 /** @brief 接收会话上下文。 */
 static Receive_Handle_t receive_handle = {0};
@@ -47,18 +46,6 @@ static Reply_Session_t reply_session = {0};
 /** @brief 上层接收回调。 */
 static comm_rx_callback_t rx_callback = NULL;
 
-/** @brief 以小端格式解析 16 位无符号整数。 */
-static uint16_t parse_u16_le(const uint8_t *buf)
-{
-    return (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
-}
-
-/** @brief 以小端格式写入 16 位无符号整数。 */
-static void write_u16_le(uint8_t *buf, uint16_t value)
-{
-    buf[0] = (uint8_t)(value & 0xFFu);
-    buf[1] = (uint8_t)(value >> 8);
-}
 
 /** @brief 释放接收缓存并重置接收上下文。 */
 static void release_receive_payload_buffer(void)
@@ -113,7 +100,7 @@ static void abort_reply_session(void)
 }
 
 /** @brief 打印接收完成后的载荷内容（HEX + ASCII，最多展示 128 字节）。 */
-static void print_received_payload_content(const uint8_t *buf, uint16_t len)
+static void print_received_payload_content(const uint8_t* buf, uint16_t len)
 {
     const uint16_t show_len = (len > 128u) ? 128u : len;
     uint16_t i = 0;
@@ -180,7 +167,7 @@ static void comm_send(Frame_Data_t frame_data)
     memcpy(words, &frame_data, CRC_BYTES_SIZE);
     CRC_ResetDR();
     frame_data.crc = CRC_CalcBlockCRC(words, CRC_WORD_SIZE);
-    USBD_SendCustomData((uint8_t *)&frame_data, sizeof(Frame_Data_t));
+    USBD_SendCustomData((uint8_t*)&frame_data, sizeof(Frame_Data_t));
 }
 
 /** @brief 注册上层接收回调。 */
@@ -196,9 +183,9 @@ void comm_register_rx_callback(comm_rx_callback_t callback)
  * 1. 长度超限或空指针参数非法时直接忽略。
  * 2. 若已有待发/在发业务回复，会被新回复覆盖（控制帧优先级独立更高）。
  */
-void comm_queue_reply(uint8_t payload_type, const uint8_t *data, uint16_t len)
+void comm_queue_reply(uint8_t payload_type, const uint8_t* data, uint16_t len)
 {
-    uint8_t *new_payload_buf = NULL;
+    uint8_t* new_payload_buf = NULL;
 
     if (len > FRAME_SEND_MAX_BYTES)
     {
@@ -212,7 +199,7 @@ void comm_queue_reply(uint8_t payload_type, const uint8_t *data, uint16_t len)
 
     if (len > 0u)
     {
-        new_payload_buf = (uint8_t *)malloc(len);
+        new_payload_buf = (uint8_t*)malloc(len);
         if (new_payload_buf == NULL)
         {
             return;
@@ -236,7 +223,7 @@ void comm_queue_reply(uint8_t payload_type, const uint8_t *data, uint16_t len)
 }
 
 /** @brief 将完整业务载荷回调给上层。 */
-static void dispatch_received_payload(uint8_t payload_type, const uint8_t *payload, uint16_t payload_len)
+static void dispatch_received_payload(uint8_t payload_type, const uint8_t* payload, uint16_t payload_len)
 {
     if (rx_callback != NULL)
     {
@@ -265,7 +252,7 @@ static void comm_recv_process(void)
     if (data_cnt == DEF_ENDP_SIZE_CUSTOM)
     {
         Frame_Data_t frame_data;
-        const uint8_t *p = USBD_GetCustomData();
+        const uint8_t* p = USBD_GetCustomData();
         memcpy(&frame_data, p, sizeof(frame_data));
 
         if (frame_data.seq_num > SEQ_MAX_NUM)
@@ -294,129 +281,133 @@ static void comm_recv_process(void)
                 switch (frame_data.type)
                 {
                 case FRAME_TYPE_START:
-                {
-                    /* START 必须从 seq=0 开始。 */
-                    if (frame_data.seq_num == 0u)
                     {
-                        const uint16_t payload_all_len = parse_u16_le(frame_data.payload.data);
-                        if (payload_all_len > FRAME_RECV_MAX_BYTES)
+                        /* START 必须从 seq=0 开始。 */
+                        if (frame_data.seq_num == 0u)
                         {
-                            /* 总长度超限，拒绝会话。 */
+                            const uint16_t payload_all_len = parse_u16_le(frame_data.payload.data);
+                            if (payload_all_len > FRAME_RECV_MAX_BYTES)
+                            {
+                                /* 总长度超限，拒绝会话。 */
+                                queue_control_frame(FRAME_TYPE_ERROR);
+                                break;
+                            }
+
+                            /* 新接收会话会抢占旧业务回复会话。 */
+                            abort_reply_session();
+                            /* 清理旧接收缓存，开始新会话。 */
+                            release_receive_payload_buffer();
+
+                            if (payload_all_len > 0u)
+                            {
+                                receive_handle.payload_buf = (uint8_t*)malloc(payload_all_len);
+                                if (receive_handle.payload_buf == NULL)
+                                {
+                                    /* 内存不足，通知对端错误。 */
+                                    queue_control_frame(FRAME_TYPE_ERROR);
+                                    break;
+                                }
+                            }
+
+                            receive_handle.payload_type = frame_data.payload.type;
+                            receive_handle.expected_payload_len = payload_all_len;
+                            receive_handle.received_payload_len = 0;
+                            receive_handle.last_seq_num = 0;
+                            receive_handle.need_ack = payload_all_len > 0u ? 1u : 0u;
+
+                            /* 先入队 ACK，确保协议确认优先于业务回复。 */
+                            queue_control_frame(FRAME_TYPE_ACK);
+
+                            if (payload_all_len == 0u)
+                            {
+                                /* 零长度请求：立即回调并释放会话。 */
+                                dispatch_received_payload(receive_handle.payload_type, NULL, 0);
+                                release_receive_payload_buffer();
+                            }
+                        }
+                        else
+                        {
+                            /* 非法 START 序号，重置接收并回 ERROR。 */
+                            release_receive_payload_buffer();
+                            queue_control_frame(FRAME_TYPE_ERROR);
+                        }
+                        break;
+                    }
+                case FRAME_TYPE_DATA:
+                    {
+                        const uint16_t frame_payload_len = frame_data.payload_length;
+                        uint8_t is_complete = 0u;
+
+                        /* DATA 必须严格按顺序到达且需要存在活动接收会话。 */
+                        if (frame_data.seq_num != (uint8_t)(receive_handle.last_seq_num + 1u) ||
+                            receive_handle.expected_payload_len == 0u)
+                        {
+                            release_receive_payload_buffer();
                             queue_control_frame(FRAME_TYPE_ERROR);
                             break;
                         }
 
-                        /* 新接收会话会抢占旧业务回复会话。 */
-                        abort_reply_session();
-                        /* 清理旧接收缓存，开始新会话。 */
-                        release_receive_payload_buffer();
-
-                        if (payload_all_len > 0u)
+                        /* 单帧数据长度必须在 (0, FRAME_PAYLOAD_DATA_SIZE] 范围内。 */
+                        if (frame_payload_len == 0u || frame_payload_len > FRAME_PAYLOAD_DATA_SIZE)
                         {
-                            receive_handle.payload_buf = (uint8_t *)malloc(payload_all_len);
-                            if (receive_handle.payload_buf == NULL)
-                            {
-                                /* 内存不足，通知对端错误。 */
-                                queue_control_frame(FRAME_TYPE_ERROR);
-                                break;
-                            }
+                            release_receive_payload_buffer();
+                            queue_control_frame(FRAME_TYPE_ERROR);
+                            break;
                         }
 
-                        receive_handle.payload_type = frame_data.payload.type;
-                        receive_handle.expected_payload_len = payload_all_len;
-                        receive_handle.received_payload_len = 0;
-                        receive_handle.last_seq_num = 0;
-                        receive_handle.need_ack = payload_all_len > 0u ? 1u : 0u;
-
-                        /* 先入队 ACK，确保协议确认优先于业务回复。 */
-                        queue_control_frame(FRAME_TYPE_ACK);
-
-                        if (payload_all_len == 0u)
+                        /* 业务类型在整个会话内必须一致。 */
+                        if (frame_data.payload.type != receive_handle.payload_type)
                         {
-                            /* 零长度请求：立即回调并释放会话。 */
-                            dispatch_received_payload(receive_handle.payload_type, NULL, 0);
+                            release_receive_payload_buffer();
+                            queue_control_frame(FRAME_TYPE_ERROR);
+                            break;
+                        }
+
+                        /* 不能越界写入接收缓存。 */
+                        if (frame_payload_len > (uint16_t)(receive_handle.expected_payload_len - receive_handle.
+                            received_payload_len))
+                        {
+                            release_receive_payload_buffer();
+                            queue_control_frame(FRAME_TYPE_ERROR);
+                            break;
+                        }
+
+                        /* 有效会话必须已分配缓存。 */
+                        if (receive_handle.payload_buf == NULL)
+                        {
+                            release_receive_payload_buffer();
+                            queue_control_frame(FRAME_TYPE_ERROR);
+                            break;
+                        }
+
+                        /* 复制分片并推进接收进度。 */
+                        memcpy(receive_handle.payload_buf + receive_handle.received_payload_len,
+                               frame_data.payload.data, frame_payload_len);
+                        receive_handle.received_payload_len += frame_payload_len;
+                        receive_handle.last_seq_num++;
+                        receive_handle.need_ack =
+                                receive_handle.received_payload_len < receive_handle.expected_payload_len ? 1u : 0u;
+                        is_complete = receive_handle.received_payload_len == receive_handle.expected_payload_len
+                                          ? 1u
+                                          : 0u;
+
+                        /* 末片查询请求不回 ACK，直接进入回复 START。 */
+                        if (!(is_complete && DATA_TYPE_IS_QUERY(receive_handle.payload_type)))
+                        {
+                            queue_control_frame(FRAME_TYPE_ACK);
+                        }
+
+                        if (is_complete)
+                        {
+                            /* 会话完成：打印内容、回调上层、释放缓存。 */
+                            print_received_payload_content(receive_handle.payload_buf,
+                                                           receive_handle.received_payload_len);
+                            dispatch_received_payload(receive_handle.payload_type, receive_handle.payload_buf,
+                                                      receive_handle.received_payload_len);
                             release_receive_payload_buffer();
                         }
-                    }
-                    else
-                    {
-                        /* 非法 START 序号，重置接收并回 ERROR。 */
-                        release_receive_payload_buffer();
-                        queue_control_frame(FRAME_TYPE_ERROR);
-                    }
-                    break;
-                }
-                case FRAME_TYPE_DATA:
-                {
-                    const uint16_t frame_payload_len = frame_data.payload_length;
-                    uint8_t is_complete = 0u;
-
-                    /* DATA 必须严格按顺序到达且需要存在活动接收会话。 */
-                    if (frame_data.seq_num != (uint8_t)(receive_handle.last_seq_num + 1u) ||
-                        receive_handle.expected_payload_len == 0u)
-                    {
-                        release_receive_payload_buffer();
-                        queue_control_frame(FRAME_TYPE_ERROR);
                         break;
                     }
-
-                    /* 单帧数据长度必须在 (0, FRAME_PAYLOAD_DATA_SIZE] 范围内。 */
-                    if (frame_payload_len == 0u || frame_payload_len > FRAME_PAYLOAD_DATA_SIZE)
-                    {
-                        release_receive_payload_buffer();
-                        queue_control_frame(FRAME_TYPE_ERROR);
-                        break;
-                    }
-
-                    /* 业务类型在整个会话内必须一致。 */
-                    if (frame_data.payload.type != receive_handle.payload_type)
-                    {
-                        release_receive_payload_buffer();
-                        queue_control_frame(FRAME_TYPE_ERROR);
-                        break;
-                    }
-
-                    /* 不能越界写入接收缓存。 */
-                    if (frame_payload_len > (uint16_t)(receive_handle.expected_payload_len - receive_handle.received_payload_len))
-                    {
-                        release_receive_payload_buffer();
-                        queue_control_frame(FRAME_TYPE_ERROR);
-                        break;
-                    }
-
-                    /* 有效会话必须已分配缓存。 */
-                    if (receive_handle.payload_buf == NULL)
-                    {
-                        release_receive_payload_buffer();
-                        queue_control_frame(FRAME_TYPE_ERROR);
-                        break;
-                    }
-
-                    /* 复制分片并推进接收进度。 */
-                    memcpy(receive_handle.payload_buf + receive_handle.received_payload_len,
-                           frame_data.payload.data, frame_payload_len);
-                    receive_handle.received_payload_len += frame_payload_len;
-                    receive_handle.last_seq_num++;
-                    receive_handle.need_ack =
-                        receive_handle.received_payload_len < receive_handle.expected_payload_len ? 1u : 0u;
-                    is_complete = receive_handle.received_payload_len == receive_handle.expected_payload_len ? 1u : 0u;
-
-                    /* 末片查询请求不回 ACK，直接进入回复 START。 */
-                    if (!(is_complete && DATA_TYPE_IS_QUERY(receive_handle.payload_type)))
-                    {
-                        queue_control_frame(FRAME_TYPE_ACK);
-                    }
-
-                    if (is_complete)
-                    {
-                        /* 会话完成：打印内容、回调上层、释放缓存。 */
-                        print_received_payload_content(receive_handle.payload_buf, receive_handle.received_payload_len);
-                        dispatch_received_payload(receive_handle.payload_type, receive_handle.payload_buf,
-                                                  receive_handle.received_payload_len);
-                        release_receive_payload_buffer();
-                    }
-                    break;
-                }
                 case FRAME_TYPE_ACK:
                     /* 仅在 WAIT_RESPONSE 且 seq 匹配当前待确认帧时接受 ACK。 */
                     if (send_handle.status == SEND_STATUS_WAIT_RESPONSE &&
@@ -469,7 +460,7 @@ static void comm_recv_process(void)
  * 2. 业务回复 START
  * 3. 业务回复 DATA
  */
-static uint8_t prepare_next_frame(Frame_Data_t *out_frame, TX_SOURCE *out_source)
+static uint8_t prepare_next_frame(Frame_Data_t* out_frame, TX_SOURCE* out_source)
 {
     memset(out_frame, 0, sizeof(*out_frame));
     *out_source = TX_SOURCE_NONE;
@@ -503,7 +494,7 @@ static uint8_t prepare_next_frame(Frame_Data_t *out_frame, TX_SOURCE *out_source
 
         {
             const uint16_t chunk_len =
-                (remaining_len > FRAME_PAYLOAD_DATA_SIZE) ? FRAME_PAYLOAD_DATA_SIZE : remaining_len;
+                    (remaining_len > FRAME_PAYLOAD_DATA_SIZE) ? FRAME_PAYLOAD_DATA_SIZE : remaining_len;
 
             out_frame->seq_num = reply_session.next_seq_num;
             out_frame->type = FRAME_TYPE_DATA;
@@ -540,7 +531,7 @@ static void handle_send_ack(void)
         break;
     case TX_SOURCE_REPLY_DATA:
         reply_session.acked_payload_len =
-            (uint16_t)(reply_session.acked_payload_len + send_handle.frame_data.payload_length);
+                (uint16_t)(reply_session.acked_payload_len + send_handle.frame_data.payload_length);
         reply_session.next_seq_num++;
         if (reply_session.acked_payload_len >= reply_session.payload_len)
         {

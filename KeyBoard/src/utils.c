@@ -79,3 +79,17 @@ const uint8_t* config_rgb_color_layer_address(const uint8_t index)
     const uint8_t* layers_src = flash_base + sizeof(ConfigHeader_t);
     return layers_src + index * CONFIG_RGB_COLOR_LAYER_BYTE;
 }
+
+
+/** @brief 以小端格式解析 16 位无符号整数。 */
+uint16_t parse_u16_le(const uint8_t* buf)
+{
+    return (uint16_t)buf[0] | ((uint16_t)buf[1] << 8);
+}
+
+/** @brief 以小端格式写入 16 位无符号整数。 */
+void write_u16_le(uint8_t* buf, const uint16_t value)
+{
+    buf[0] = (uint8_t)(value & 0xFFu);
+    buf[1] = (uint8_t)(value >> 8);
+}
